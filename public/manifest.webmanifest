@@ -1,0 +1,31 @@
+{
+  "name": "序曲排課收集",
+  "short_name": "序曲排課",
+  "description": "序曲音樂學院 — 老師每月排課收集",
+  "start_url": "/xuqu-schedule/",
+  "scope": "/xuqu-schedule/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#faf6f0",
+  "theme_color": "#c1272d",
+  "icons": [
+    {
+      "src": "/xuqu-schedule/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/xuqu-schedule/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/xuqu-schedule/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

@@ -1,0 +1,253 @@
+@import "tailwindcss";
+
+:root {
+  --background: #fffdf7; /* 奶油白 */
+  --foreground: #2b2620;
+  --brand: #c1272d;
+  /* 暖炭灰（取自 logo 文字色）取代原本的藍；沿用 navy 這個 token 名 */
+  --navy: #3b352f;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-brand: var(--brand);
+  --color-navy: var(--navy);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui,
+    sans-serif;
+}
+
+@keyframes cellPop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0.3;
+  }
+  60% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.cell-fill {
+  animation: cellPop 160ms ease-out;
+}
+
+.cell-pop {
+  animation: cellPop 200ms ease-out;
+}
+
+/* 手機填格時的漣漪光暈 */
+@keyframes tapRipple {
+  0% {
+    transform: scale(0.2);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+.tap-ripple {
+  animation: tapRipple 450ms ease-out forwards;
+}
+
+/* 飄升音符 */
+@keyframes floatNote {
+  0% {
+    transform: translateY(0) scale(0.8) rotate(0deg);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-46px) scale(1.2) rotate(18deg);
+    opacity: 0;
+  }
+}
+.float-note {
+  animation: floatNote 800ms ease-out forwards;
+}
+
+@keyframes confettiFall {
+  0% {
+    transform: translateY(-10vh) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(110vh) rotate(540deg);
+    opacity: 0.9;
+  }
+}
+
+.confetti {
+  animation: confettiFall 2.2s linear forwards;
+}
+
+@keyframes cardPop {
+  0% {
+    transform: scale(0.7);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.04);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.celebrate-card {
+  animation: cardPop 260ms ease-out;
+}
+
+/* 登入頁 logo 動畫：掉落彈入 → 持續漂浮 */
+@keyframes logoDrop {
+  0% {
+    transform: translateY(-44px) scale(0.5) rotate(-8deg);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(6px) scale(1.06) rotate(2deg);
+  }
+  100% {
+    transform: translateY(0) scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+@keyframes logoFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes glowPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.3;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 0.55;
+  }
+}
+
+.logo-anim {
+  animation: logoDrop 0.75s cubic-bezier(0.2, 0.8, 0.2, 1),
+    logoFloat 3.2s ease-in-out 0.75s infinite;
+}
+
+.logo-glow {
+  animation: glowPulse 3.2s ease-in-out infinite;
+}
+
+/* ── 登入開場動畫 ───────────────────────────── */
+@keyframes introLogoIn {
+  0% {
+    transform: scale(0) rotate(-230deg);
+    opacity: 0;
+  }
+  55% {
+    transform: scale(1.2) rotate(14deg);
+    opacity: 1;
+  }
+  72% {
+    transform: scale(0.92) rotate(-5deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+@keyframes ringExpand {
+  0% {
+    transform: scale(0.35);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+@keyframes splashOut {
+  0%,
+  82% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+}
+@keyframes titleUp {
+  0%,
+  28% {
+    opacity: 0;
+    transform: translateY(12px);
+    letter-spacing: 0.3em;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    letter-spacing: 0.06em;
+  }
+}
+@keyframes noteRise {
+  0% {
+    transform: translateY(18px) scale(0.5) rotate(0deg);
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-96px) scale(1.15) rotate(24deg);
+    opacity: 0;
+  }
+}
+@keyframes formReveal {
+  0% {
+    opacity: 0;
+    transform: translateY(26px) scale(0.95) rotateX(12deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotateX(0deg);
+  }
+}
+
+.splash-overlay {
+  animation: splashOut 2.1s ease forwards;
+}
+.splash-logo {
+  animation: introLogoIn 1.15s cubic-bezier(0.2, 0.8, 0.2, 1) both,
+    logoFloat 3s ease-in-out 1.15s infinite;
+}
+.splash-ring {
+  animation: ringExpand 1.9s ease-out infinite;
+}
+.splash-title {
+  animation: titleUp 1.5s ease both;
+}
+.note-rise {
+  animation: noteRise 1.9s ease-in-out infinite;
+}
+.form-reveal {
+  animation: formReveal 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) 1.75s both;
+}

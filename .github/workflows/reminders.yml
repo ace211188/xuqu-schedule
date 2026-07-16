@@ -1,0 +1,41 @@
+name: 排課提醒推播
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "biweekly(每兩週提醒) / test(測試)"
+        default: "test"
+  schedule:
+    - cron: "0 2 1,15 * *" # 每月 1、15 日 10:00 台北 → 每兩週提醒確認/更新
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: 決定模式
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "mode=${{ github.event.inputs.mode }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=biweekly" >> "$GITHUB_OUTPUT"
+          fi
+      - name: 發送
+        env:
+          MODE: ${{ steps.mode.outputs.mode }}
+          SUPABASE_URL: https://gffemhrthwdnajdpkwsq.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VAPID_PUBLIC: ${{ secrets.VAPID_PUBLIC }}
+          VAPID_PRIVATE: ${{ secrets.VAPID_PRIVATE }}
+          VAPID_SUBJECT: mailto:overtureacademyofmusic@gmail.com
+        run: node scripts/send-reminders.mjs
