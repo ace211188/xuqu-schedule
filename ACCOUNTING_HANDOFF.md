@@ -1,13 +1,14 @@
 # 記帳 / 代墊 / 收款功能 — 開發交接記錄
 
-> 最後更新：2026-07-20（前端 UI 全部完成、本機 build 通過）
-> 分支：`feat/accounting`（尚未 commit、尚未 push、尚未在 Supabase 執行 SQL）
+> 最後更新：2026-07-20（已上線 GitHub Pages、Supabase 已設定、多輪 UX 迭代完成）
+> 分支：`main`（已 commit + push + 自動部署；Supabase schema 已執行）
+> 線上：https://ace211188.github.io/xuqu-schedule/
 > 完整設計計畫：`C:\Users\USER\.claude\plans\immutable-waddling-wadler.md`
+> 最新變更紀錄請見本檔最下方「## 變更紀錄」。
 
-## 目前狀態：✅ 程式全部完成，等「上線前手動設定」
+## 目前狀態：✅ 已上線運作中
 
-所有畫面、推播 script、排程 workflow 都已完成，`pnpm build` 靜態匯出通過、TypeScript 無錯誤。
-接下來只剩下面「上線前的手動設定」（在 Supabase 執行 SQL、開權限、建帳戶）。
+所有畫面、推播 script、排程 workflow 完成並部署；Supabase schema／權限／帳戶／分類都已設定。
 
 ### ✅ 本次新增完成的檔案
 | 檔案 | 內容 |
@@ -72,8 +73,25 @@
 2. 繼續做上面「⬜ 明天要做的檔案」清單（從 Reimbursements 開始）。
 3. UI 全部完成後：`pnpm install` → `pnpm dev` 本機測試（見計畫檔的驗證章節）。
 
-## 上線前的手動設定（等程式完成後）
-- 到 Supabase SQL Editor 執行 `supabase/accounting_schema.sql`。
-- 把宇群/奕寬/美君三人的 `teachers.can_accounting` 設為 `true`（宇群本來就 is_admin）。
-- 在「設定」頁建立實際帳戶與期初餘額、指定主帳戶負責人。
-- GitHub 加排程 workflow（VAPID 等 secrets 已存在）。
+## 上線前的手動設定（已完成）
+- ✅ Supabase SQL Editor 執行 `supabase/accounting_schema.sql`（含 teachers 管理者 update 政策、初始帳戶/權限）。
+- ✅ 宇群/奕寬/美君 `can_accounting=true`；宇群另設 `is_admin=true`（獨立於既有「管理員」帳號）。
+- ✅ 分類改為：收入=學費/教材教具/場地租借/其他；支出=固定/行政/行銷/其他（`accounting_categories_extra.sql` 為早期版本，最終以此為準）。
+- ⬜ 帳戶「期初餘額」宇群需在「設定」頁填成目前實際金額（未匯入 2026 歷史明細）。
+
+## 變更紀錄
+
+### 2026-07-20（上線後多輪 UX 迭代）
+- **上線**：合併到 `main` → GitHub Actions 部署到 GitHub Pages（期間遇 GitHub Actions 全球故障，排隊後成功）。
+- **角色**：`teachers` 缺 update 政策會讓設定頁開關失效 → 補管理者 update RLS。發現另有獨立「管理員」帳號；將「宇群」帳號設為 `is_admin` 使其同時具管理員＋一般老師(代墊/收款)功能。
+- **導覽**：宇群登入**預設進記帳**；記帳/排課後台/我的排課三者可互相切換（`page.tsx` view 狀態 + 各頁頂欄切換鈕）。純排課的「管理員」帳號仍預設進排課後台。
+- **流水帳改版**（管理員專屬，避免負責人看到薪資）：依月份分組、本月預設展開；桌機為 日期/項目/收入/支出/餘額 表，**手機改為緊湊列表**（不左右捲）；餘額用權威餘額往回推算。記一筆（含「存並再記一筆」）＋內部轉帳。
+- **月結報表**（新分頁「月結」）：選月份 → 總收入/支出/淨額、分類長條圖、期末各帳戶餘額。`scripts/send-monthly-report.mjs` + `.github/workflows/accounting-monthly.yml` 每月 5 號推播上月摘要。
+- **動效**：背景漂浮粒子、標題逐字浮現、數字 count-up、卡片浮起、動畫式下拉選單 `Select`、彈窗滑入、長條圖生長、分頁淡入（全部尊重 prefers-reduced-motion）。
+- **手機記一筆穩定化**：彈窗改整層可捲動、移除 autoFocus（避免鍵盤頂歪）；分類下拉自動判斷上下展開。
+- **記一筆種類**：分類欄位改為**預設顯示且自動選好第一個**（依收/支別）。
+- **安全**：一支臨時腳本 `_tmp_user.mjs`（含無效測試假密碼、帳號從未建立）誤入 commit，已從最新版移除；GitGuardian 曾告警。**待辦：從 git 歷史徹底清除（force-push）尚未執行——需宇群明確授權破壞性 git 操作。**
+- **可直接操作 Supabase**：service_role 金鑰存於本機 `.env.local`（git 忽略、未上傳），可用一次性 node 腳本做管理操作（用完即刪）。
+
+### 主要檔案（記帳模組，`src/components/accounting/`）
+`AccountingApp.tsx`(外殼/分頁/粒子/標題) · `Dashboard.tsx`(彙總) · `Ledger.tsx`(流水帳) · `Monthly.tsx`(月結) · `Reimbursements.tsx`(代墊) · `Collections.tsx`(收款) · `Settings.tsx`(帳戶/類別/成員) · `ui.tsx`(共用元件＋動畫 `Select`) · `anim.tsx`(count-up/粒子/標題/Reveal) · `Receipts.tsx` · `useAccountingData.ts`。資料層 `src/lib/accounting.ts`。
