@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fmtMoney } from "@/lib/accounting";
 
 // 金額（支出紅、收入綠、其他預設）
@@ -191,6 +191,101 @@ export function Modal({
         </div>
         {children}
       </div>
+    </div>
+  );
+}
+
+// 自訂下拉：展開有動畫、比原生 select 好看且滑順
+export type Option = { value: string; label: string };
+export function Select({
+  value,
+  onChange,
+  options,
+  placeholder = "請選擇",
+  className = "",
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: Option[];
+  placeholder?: string;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [up, setUp] = useState(false); // 空間不足時往上展開
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  function toggle() {
+    // 依按鈕在畫面上的位置決定往上或往下展開，避免被切掉
+    const el = ref.current;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      setUp(window.innerHeight - r.bottom < 240 && r.top > 240);
+    }
+    setOpen((o) => !o);
+  }
+
+  const sel = options.find((o) => o.value === value);
+
+  return (
+    <div ref={ref} className={`relative ${className}`}>
+      <button
+        type="button"
+        onClick={toggle}
+        className={`${inputCls} flex items-center justify-between gap-2 text-left`}
+      >
+        <span className={sel ? "truncate" : "truncate text-black/40"}>
+          {sel ? sel.label : placeholder}
+        </span>
+        <span
+          className={`shrink-0 text-black/40 transition-transform duration-200 ${
+            open ? "rotate-180" : ""
+          }`}
+        >
+          ▾
+        </span>
+      </button>
+      {open && (
+        <div
+          className={`acc-menu absolute z-50 max-h-60 w-full overflow-auto rounded-xl border border-black/10 bg-white p-1 shadow-xl ${
+            up ? "bottom-full mb-1" : "top-full mt-1"
+          }`}
+        >
+          {options.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => {
+                onChange(o.value);
+                setOpen(false);
+              }}
+              className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition hover:bg-navy/5 active:scale-[0.99] ${
+                o.value === value
+                  ? "bg-navy/10 font-medium text-navy"
+                  : "text-black/70"
+              }`}
+            >
+              <span className="truncate">{o.label}</span>
+              {o.value === value && <span className="text-navy">✓</span>}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

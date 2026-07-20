@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import type { Teacher } from "@/lib/useAuth";
 import { fmtMoney, type Entry } from "@/lib/accounting";
 import type { AccountingData } from "./useAccountingData";
-import { Card, Empty, SectionTitle } from "./ui";
+import { Card, Empty, SectionTitle, Select } from "./ui";
 import { CountMoney, Reveal } from "./anim";
 
 function thisMonthKey() {
@@ -100,17 +100,12 @@ export default function Monthly({
     <div className="space-y-4 acc-panel">
       {/* 月份選擇 */}
       <div className="flex items-center gap-2">
-        <select
+        <Select
+          className="w-40"
           value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          className="rounded-xl border border-black/15 bg-white px-3 py-2 text-sm outline-none focus:border-navy"
-        >
-          {months.map((m) => (
-            <option key={m} value={m}>
-              {monthLabel(m)}
-            </option>
-          ))}
-        </select>
+          onChange={setMonth}
+          options={months.map((m) => ({ value: m, label: monthLabel(m) }))}
+        />
         {month === thisMonthKey() && (
           <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-medium text-brand">
             本月（進行中）

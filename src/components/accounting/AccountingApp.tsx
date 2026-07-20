@@ -95,8 +95,8 @@ export default function AccountingApp({
         </div>
       </header>
 
-      {/* 分頁列 */}
-      <div className="mb-4 flex gap-1 overflow-x-auto rounded-2xl border border-black/10 bg-white/70 p-1">
+      {/* 分頁列：可橫向捲動、自然寬度，紅點內嵌避免被裁切 */}
+      <div className="mb-4 flex gap-1 overflow-x-auto rounded-2xl border border-black/10 bg-white/70 p-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {tabs.map((t) => {
           const active = tab === t.key;
           const badge = badges[t.key] ?? 0;
@@ -104,7 +104,7 @@ export default function AccountingApp({
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`relative flex-1 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition ${
+              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl px-3.5 py-2 text-sm font-medium transition active:scale-95 ${
                 active
                   ? "bg-navy text-white shadow-sm"
                   : "text-black/55 hover:text-navy"
@@ -113,7 +113,7 @@ export default function AccountingApp({
               {t.label}
               {badge > 0 && (
                 <span
-                  className={`absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold ${
+                  className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold ${
                     active ? "bg-white text-navy" : "bg-brand text-white"
                   }`}
                 >

@@ -320,6 +320,22 @@ body {
   animation: sectionOpen 0.3s ease both;
 }
 
+/* 下拉選單展開 */
+@keyframes menuIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px) scaleY(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+.acc-menu {
+  transform-origin: top;
+  animation: menuIn 0.16s ease-out;
+}
+
 /* 互動：滑過浮起 */
 .acc-hover {
   transition: transform 0.18s ease, box-shadow 0.18s ease;

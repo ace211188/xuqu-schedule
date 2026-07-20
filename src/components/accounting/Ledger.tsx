@@ -20,6 +20,7 @@ import {
   GhostBtn,
   Modal,
   PrimaryBtn,
+  Select,
   inputCls,
 } from "./ui";
 import { CountMoney } from "./anim";
@@ -132,18 +133,15 @@ export default function Ledger({
     <div className="space-y-3">
       {/* 帳戶 + 目前餘額 */}
       <div className="flex flex-wrap items-center gap-2">
-        <select
-          className={`${inputCls} w-auto`}
+        <Select
+          className="w-40"
           value={acctId}
-          onChange={(e) => setAcctId(e.target.value)}
-        >
-          {accounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-              {a.is_main ? "（主）" : ""}
-            </option>
-          ))}
-        </select>
+          onChange={setAcctId}
+          options={accounts.map((a) => ({
+            value: a.id,
+            label: a.name + (a.is_main ? "（主）" : ""),
+          }))}
+        />
         <span className="acc-pop rounded-full bg-navy px-3 py-1.5 text-sm font-semibold text-white">
           餘額 <CountMoney value={currentBalance} />
         </span>
@@ -267,6 +265,11 @@ export default function Ledger({
   );
 }
 
+function shortDate(iso: string) {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
 function LedgerTable({
   rows,
   catName,
@@ -279,7 +282,60 @@ function LedgerTable({
   onDelete: (id: string) => void;
 }) {
   return (
-    <div className="overflow-x-auto">
+    <>
+      {/* 手機：緊湊列表（不用左右捲） */}
+      <div className="sm:hidden">
+        {rows.map((r) => {
+          const tag = SOURCE_LABEL[r.source_type];
+          const inc = r.signed_amount > 0;
+          return (
+            <div
+              key={r.id}
+              className="flex items-center gap-2 border-t border-black/5 px-3 py-2.5 first:border-t-0"
+            >
+              <div className="w-9 shrink-0 text-[11px] leading-tight text-black/45">
+                {shortDate(r.occurred_on)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm text-navy">
+                  {r.note ||
+                    (r.category_id ? catName.get(r.category_id) : "—")}
+                  {tag && (
+                    <span className="ml-1 rounded-full bg-black/5 px-1.5 py-0.5 text-[10px] text-black/45">
+                      {tag}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="shrink-0 text-right">
+                <div
+                  className={`text-sm tabular-nums ${
+                    inc ? "text-[#5f7a4f]" : "text-brand"
+                  }`}
+                >
+                  {inc ? "+" : "-"}
+                  {fmtMoney(Math.abs(r.signed_amount)).replace("-", "")}
+                </div>
+                <div className="text-[11px] tabular-nums text-black/40">
+                  餘 {fmtMoney(r.balanceAfter)}
+                </div>
+              </div>
+              {isAdmin && r.source_type === "manual" && (
+                <button
+                  onClick={() => onDelete(r.id)}
+                  className="shrink-0 px-1 text-black/25 hover:text-brand"
+                  title="刪除"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 桌機：完整表格 */}
+      <div className="hidden overflow-x-auto sm:block">
       <table className="w-full min-w-[520px] text-sm">
         <thead>
           <tr className="bg-black/[0.03] text-xs text-black/50">
@@ -338,7 +394,8 @@ function LedgerTable({
           })}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -457,34 +514,25 @@ function EntryModal({
 
         {accounts.length > 1 && (
           <Field label="帳戶">
-            <select
-              className={inputCls}
+            <Select
               value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-            >
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
+              onChange={setAccountId}
+              options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+            />
           </Field>
         )}
 
         {showCat ? (
           <Field label="分類" hint="（選填）">
-            <select
-              className={inputCls}
+            <Select
               value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-            >
-              <option value="">未分類</option>
-              {cats.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+              onChange={setCategoryId}
+              placeholder="未分類"
+              options={[
+                { value: "", label: "未分類" },
+                ...cats.map((c) => ({ value: c.id, label: c.name })),
+              ]}
+            />
           </Field>
         ) : (
           <button
@@ -563,30 +611,18 @@ function TransferModal({
           帳戶間搬錢（例：美君主帳戶 → 宇群帳戶），不影響總收支。
         </p>
         <Field label="從（轉出）">
-          <select
-            className={inputCls}
+          <Select
             value={fromId}
-            onChange={(e) => setFromId(e.target.value)}
-          >
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
+            onChange={setFromId}
+            options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+          />
         </Field>
         <Field label="到（轉入）">
-          <select
-            className={inputCls}
+          <Select
             value={toId}
-            onChange={(e) => setToId(e.target.value)}
-          >
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
+            onChange={setToId}
+            options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+          />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="金額">
