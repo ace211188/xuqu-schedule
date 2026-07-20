@@ -7,6 +7,7 @@ import Dashboard from "./Dashboard";
 import Reimbursements from "./Reimbursements";
 import Collections from "./Collections";
 import Ledger from "./Ledger";
+import Monthly from "./Monthly";
 import Settings from "./Settings";
 
 export type AccountingTab =
@@ -14,13 +15,15 @@ export type AccountingTab =
   | "reimb"
   | "collect"
   | "ledger"
+  | "monthly"
   | "settings";
 
 const TABS: { key: AccountingTab; label: string; adminOnly?: boolean }[] = [
   { key: "dashboard", label: "彙總" },
+  { key: "ledger", label: "流水帳", adminOnly: true },
+  { key: "monthly", label: "月結", adminOnly: true },
   { key: "reimb", label: "代墊" },
   { key: "collect", label: "收款" },
-  { key: "ledger", label: "流水帳" },
   { key: "settings", label: "設定", adminOnly: true },
 ];
 
@@ -115,15 +118,20 @@ export default function AccountingApp({
       {data.loading ? (
         <div className="py-16 text-center text-sm text-black/45">載入中…</div>
       ) : (
-        <>
+        <div key={tab} className="acc-panel">
           {tab === "dashboard" && (
             <Dashboard teacher={teacher} data={data} onNavigate={setTab} />
           )}
+          {tab === "ledger" && teacher.is_admin && (
+            <Ledger teacher={teacher} data={data} />
+          )}
+          {tab === "monthly" && teacher.is_admin && (
+            <Monthly teacher={teacher} data={data} />
+          )}
           {tab === "reimb" && <Reimbursements teacher={teacher} data={data} />}
           {tab === "collect" && <Collections teacher={teacher} data={data} />}
-          {tab === "ledger" && <Ledger teacher={teacher} data={data} />}
           {tab === "settings" && teacher.is_admin && <Settings data={data} />}
-        </>
+        </div>
       )}
     </main>
   );

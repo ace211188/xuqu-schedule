@@ -251,3 +251,80 @@ body {
 .form-reveal {
   animation: formReveal 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) 1.75s both;
 }
+
+/* ── 記帳模組動效 ───────────────────────────── */
+@keyframes revealUp {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+/* 卡片/列浮現；用 inline style 的 animation-delay 做交錯 */
+.acc-reveal {
+  animation: revealUp 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* 分頁切換淡入 */
+@keyframes panelIn {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.acc-panel {
+  animation: panelIn 0.34s ease both;
+}
+
+/* 長條圖由左長出 */
+@keyframes barGrow {
+  0% {
+    transform: scaleX(0);
+  }
+  100% {
+    transform: scaleX(1);
+  }
+}
+.acc-bar {
+  transform-origin: left;
+  animation: barGrow 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* 展開/收合小箭頭 */
+.acc-caret {
+  transition: transform 0.25s ease;
+}
+.acc-caret-open {
+  transform: rotate(90deg);
+}
+
+/* 月份區塊展開 */
+@keyframes sectionOpen {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.acc-section {
+  animation: sectionOpen 0.3s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acc-reveal,
+  .acc-panel,
+  .acc-bar,
+  .acc-section {
+    animation: none;
+  }
+}

@@ -194,7 +194,7 @@ export async function fetchCategories(): Promise<Category[]> {
   return (data ?? []) as Category[];
 }
 
-export async function fetchEntries(limit = 200): Promise<Entry[]> {
+export async function fetchEntries(limit = 2000): Promise<Entry[]> {
   const { data } = await supabase
     .from("acc_entries")
     .select("*")

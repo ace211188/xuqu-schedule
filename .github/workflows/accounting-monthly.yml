@@ -1,0 +1,42 @@
+name: 月結報表推播
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "run(推上月月結) / test(測試)"
+        default: "test"
+  schedule:
+    # 每月 5 號 09:00 台北（UTC 01:00）推上個月月結
+    - cron: "0 1 5 * *"
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: 決定模式
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "mode=${{ github.event.inputs.mode }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=run" >> "$GITHUB_OUTPUT"
+          fi
+      - name: 發送
+        env:
+          MODE: ${{ steps.mode.outputs.mode }}
+          SUPABASE_URL: https://gffemhrthwdnajdpkwsq.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VAPID_PUBLIC: ${{ secrets.VAPID_PUBLIC }}
+          VAPID_PRIVATE: ${{ secrets.VAPID_PRIVATE }}
+          VAPID_SUBJECT: mailto:overtureacademyofmusic@gmail.com
+        run: node scripts/send-monthly-report.mjs
