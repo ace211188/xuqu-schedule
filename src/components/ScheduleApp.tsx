@@ -34,10 +34,12 @@ export default function ScheduleApp({
   teacher,
   onSignOut,
   onSwitchModule,
+  onOpenAdmin,
 }: {
   teacher: Teacher;
   onSignOut: () => void;
   onSwitchModule?: () => void;
+  onOpenAdmin?: () => void;
 }) {
   const months = useMemo(() => monthOptions(new Date(), 4), []);
   const [month, setMonth] = useState(months[1]?.value ?? months[0].value); // 預設下個月
@@ -295,7 +297,15 @@ export default function ScheduleApp({
           <p className="text-sm text-black/60">{greeting.sub}</p>
           <p className="mt-1 text-xs text-black/40">{greeting.line}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {onOpenAdmin && (
+            <button
+              onClick={onOpenAdmin}
+              className="rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/60 transition hover:border-black/40"
+            >
+              🛠️ 排課後台
+            </button>
+          )}
           {onSwitchModule && (
             <button
               onClick={onSwitchModule}

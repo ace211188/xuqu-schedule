@@ -47,10 +47,12 @@ export default function AdminDashboard({
   teacher,
   onSignOut,
   onSwitchModule,
+  onOpenMySchedule,
 }: {
   teacher: Teacher;
   onSignOut: () => void;
   onSwitchModule?: () => void;
+  onOpenMySchedule?: () => void;
 }) {
   const months = useMemo(() => monthOptions(new Date(), 4), []);
   const [month, setMonth] = useState(months[1]?.value ?? months[0].value);
@@ -155,7 +157,15 @@ export default function AdminDashboard({
           </h1>
           <p className="text-sm text-black/60">排課收集 · 管理後台</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {onOpenMySchedule && (
+            <button
+              onClick={onOpenMySchedule}
+              className="rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/60 transition hover:border-black/40"
+            >
+              🗓️ 我的排課
+            </button>
+          )}
           {onSwitchModule && (
             <button
               onClick={onSwitchModule}

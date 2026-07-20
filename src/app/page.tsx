@@ -8,11 +8,12 @@ import ScheduleApp from "@/components/ScheduleApp";
 import AdminDashboard from "@/components/AdminDashboard";
 import AccountingApp from "@/components/accounting/AccountingApp";
 
-type Module = "schedule" | "accounting";
+// admin=排課後台（管理全部老師）；me=我的排課（自己填）；accounting=記帳
+type View = "admin" | "me" | "accounting";
 
 export default function Page() {
   const { loading, session, teacher, signInWithName, signOut } = useAuth();
-  const [module, setModule] = useState<Module>("schedule");
+  const [view, setView] = useState<View | null>(null);
 
   if (!isSupabaseConfigured) {
     return (
@@ -34,37 +35,42 @@ export default function Page() {
     return <Login onLogin={signInWithName} />;
   }
 
-  const hasAccounting = teacher.is_admin || teacher.can_accounting;
+  const isAdmin = teacher.is_admin;
+  const hasAccounting = isAdmin || teacher.can_accounting;
+  // 預設畫面：管理員→排課後台；一般老師→我的排課
+  const current: View = view ?? (isAdmin ? "admin" : "me");
 
-  if (module === "accounting" && hasAccounting) {
+  const toAccounting = hasAccounting ? () => setView("accounting") : undefined;
+
+  if (current === "accounting" && hasAccounting) {
     return (
       <AccountingApp
         teacher={teacher}
         onSignOut={signOut}
-        onSwitchModule={() => setModule("schedule")}
+        onSwitchModule={() => setView(isAdmin ? "admin" : "me")}
       />
     );
   }
 
-  const toAccounting = hasAccounting
-    ? () => setModule("accounting")
-    : undefined;
-
-  if (teacher.is_admin) {
+  // 排課後台（僅管理員）
+  if (isAdmin && current === "admin") {
     return (
       <AdminDashboard
         teacher={teacher}
         onSignOut={signOut}
         onSwitchModule={toAccounting}
+        onOpenMySchedule={() => setView("me")}
       />
     );
   }
 
+  // 我的排課（一般老師；管理員也可切來填自己的）
   return (
     <ScheduleApp
       teacher={teacher}
       onSignOut={signOut}
       onSwitchModule={toAccounting}
+      onOpenAdmin={isAdmin ? () => setView("admin") : undefined}
     />
   );
 }
