@@ -320,11 +320,45 @@ body {
   animation: sectionOpen 0.3s ease both;
 }
 
+/* 互動：滑過浮起 */
+.acc-hover {
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.acc-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.28);
+}
+.acc-hover:active {
+  transform: translateY(0) scale(0.99);
+}
+
+/* 彈入 */
+@keyframes popIn {
+  0% {
+    transform: scale(0.82);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.acc-pop {
+  animation: popIn 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .acc-reveal,
   .acc-panel,
   .acc-bar,
-  .acc-section {
+  .acc-section,
+  .acc-pop {
     animation: none;
+  }
+  .acc-hover {
+    transition: none;
   }
 }

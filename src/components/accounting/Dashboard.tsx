@@ -43,7 +43,7 @@ function StatButton({
   return (
     <button
       onClick={onClick}
-      className={`flex-1 rounded-2xl border ${ring} p-3 text-left transition hover:brightness-[0.98]`}
+      className={`acc-hover flex-1 rounded-2xl border ${ring} p-3 text-left`}
     >
       <div className="text-xs text-black/50">{label}</div>
       <div className="mt-1 text-lg font-bold text-navy">{value}</div>

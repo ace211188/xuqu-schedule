@@ -31,10 +31,12 @@ export default function AccountingApp({
   teacher,
   onSignOut,
   onSwitchModule,
+  onOpenMySchedule,
 }: {
   teacher: Teacher;
   onSignOut: () => void;
   onSwitchModule?: () => void;
+  onOpenMySchedule?: () => void;
 }) {
   const [tab, setTab] = useState<AccountingTab>("dashboard");
   const data = useAccountingData(teacher.is_admin);
@@ -67,13 +69,21 @@ export default function AccountingApp({
             {teacher.is_admin ? "（管理者）" : "（負責人）"}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {onSwitchModule && (
             <button
               onClick={onSwitchModule}
               className="rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/60 transition hover:border-black/40"
             >
-              🎵 排課
+              {onOpenMySchedule ? "🛠️ 排課後台" : "🎵 排課"}
+            </button>
+          )}
+          {onOpenMySchedule && (
+            <button
+              onClick={onOpenMySchedule}
+              className="rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/60 transition hover:border-black/40"
+            >
+              🗓️ 我的排課
             </button>
           )}
           <button

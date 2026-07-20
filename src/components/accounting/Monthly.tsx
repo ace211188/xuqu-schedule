@@ -125,7 +125,7 @@ export default function Monthly({
           {/* 三大數字 */}
           <div className="grid grid-cols-3 gap-2">
             <Reveal delay={0}>
-              <Card className="p-3">
+              <Card className="acc-hover p-3">
                 <div className="text-xs text-black/50">總收入</div>
                 <CountMoney
                   value={income}
@@ -134,7 +134,7 @@ export default function Monthly({
               </Card>
             </Reveal>
             <Reveal delay={60}>
-              <Card className="p-3">
+              <Card className="acc-hover p-3">
                 <div className="text-xs text-black/50">總支出</div>
                 <CountMoney
                   value={expense}
@@ -143,7 +143,7 @@ export default function Monthly({
               </Card>
             </Reveal>
             <Reveal delay={120}>
-              <Card className="p-3">
+              <Card className="acc-hover p-3">
                 <div className="text-xs text-black/50">淨額</div>
                 <CountMoney
                   value={net}

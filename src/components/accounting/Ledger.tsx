@@ -144,7 +144,7 @@ export default function Ledger({
             </option>
           ))}
         </select>
-        <span className="rounded-full bg-navy px-3 py-1.5 text-sm font-semibold text-white">
+        <span className="acc-pop rounded-full bg-navy px-3 py-1.5 text-sm font-semibold text-white">
           餘額 <CountMoney value={currentBalance} />
         </span>
         {teacher.is_admin && (

@@ -37,8 +37,13 @@ export default function Page() {
 
   const isAdmin = teacher.is_admin;
   const hasAccounting = isAdmin || teacher.can_accounting;
-  // 預設畫面：管理員→排課後台；一般老師→我的排課
-  const current: View = view ?? (isAdmin ? "admin" : "me");
+  // 預設畫面：宇群(管理員＋記帳)→直接進記帳；純排課管理員→排課後台；一般老師→我的排課
+  const defaultView: View = isAdmin
+    ? teacher.can_accounting
+      ? "accounting"
+      : "admin"
+    : "me";
+  const current: View = view ?? defaultView;
 
   const toAccounting = hasAccounting ? () => setView("accounting") : undefined;
 
@@ -48,6 +53,7 @@ export default function Page() {
         teacher={teacher}
         onSignOut={signOut}
         onSwitchModule={() => setView(isAdmin ? "admin" : "me")}
+        onOpenMySchedule={isAdmin ? () => setView("me") : undefined}
       />
     );
   }
