@@ -46,9 +46,11 @@ function adminHi(d = new Date()) {
 export default function AdminDashboard({
   teacher,
   onSignOut,
+  onSwitchModule,
 }: {
   teacher: Teacher;
   onSignOut: () => void;
+  onSwitchModule?: () => void;
 }) {
   const months = useMemo(() => monthOptions(new Date(), 4), []);
   const [month, setMonth] = useState(months[1]?.value ?? months[0].value);
@@ -153,12 +155,22 @@ export default function AdminDashboard({
           </h1>
           <p className="text-sm text-black/60">排課收集 · 管理後台</p>
         </div>
-        <button
-          onClick={onSignOut}
-          className="rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/60 transition hover:border-black/40"
-        >
-          登出
-        </button>
+        <div className="flex gap-2">
+          {onSwitchModule && (
+            <button
+              onClick={onSwitchModule}
+              className="rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/60 transition hover:border-black/40"
+            >
+              💰 記帳
+            </button>
+          )}
+          <button
+            onClick={onSignOut}
+            className="rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/60 transition hover:border-black/40"
+          >
+            登出
+          </button>
+        </div>
       </header>
 
       {/* 月份 + 總覽 */}

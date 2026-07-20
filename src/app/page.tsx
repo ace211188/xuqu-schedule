@@ -1,13 +1,18 @@
 "use client";
 
+import { useState } from "react";
 import { useAuth } from "@/lib/useAuth";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import Login from "@/components/Login";
 import ScheduleApp from "@/components/ScheduleApp";
 import AdminDashboard from "@/components/AdminDashboard";
+import AccountingApp from "@/components/accounting/AccountingApp";
+
+type Module = "schedule" | "accounting";
 
 export default function Page() {
   const { loading, session, teacher, signInWithName, signOut } = useAuth();
+  const [module, setModule] = useState<Module>("schedule");
 
   if (!isSupabaseConfigured) {
     return (
@@ -29,9 +34,37 @@ export default function Page() {
     return <Login onLogin={signInWithName} />;
   }
 
-  if (teacher.is_admin) {
-    return <AdminDashboard teacher={teacher} onSignOut={signOut} />;
+  const hasAccounting = teacher.is_admin || teacher.can_accounting;
+
+  if (module === "accounting" && hasAccounting) {
+    return (
+      <AccountingApp
+        teacher={teacher}
+        onSignOut={signOut}
+        onSwitchModule={() => setModule("schedule")}
+      />
+    );
   }
 
-  return <ScheduleApp teacher={teacher} onSignOut={signOut} />;
+  const toAccounting = hasAccounting
+    ? () => setModule("accounting")
+    : undefined;
+
+  if (teacher.is_admin) {
+    return (
+      <AdminDashboard
+        teacher={teacher}
+        onSignOut={signOut}
+        onSwitchModule={toAccounting}
+      />
+    );
+  }
+
+  return (
+    <ScheduleApp
+      teacher={teacher}
+      onSignOut={signOut}
+      onSwitchModule={toAccounting}
+    />
+  );
 }

@@ -4,7 +4,12 @@ import { useEffect, useState, useCallback } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 
-export type Teacher = { id: string; name: string; is_admin: boolean };
+export type Teacher = {
+  id: string;
+  name: string;
+  is_admin: boolean;
+  can_accounting: boolean;
+};
 
 const EMAIL_DOMAIN = "xuqu.tw";
 
@@ -16,7 +21,7 @@ export function useAuth() {
   const loadTeacher = useCallback(async (uid: string) => {
     const { data } = await supabase
       .from("teachers")
-      .select("id,name,is_admin")
+      .select("id,name,is_admin,can_accounting")
       .eq("id", uid)
       .single();
     setTeacher(data ?? null);
