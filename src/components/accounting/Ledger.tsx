@@ -420,9 +420,11 @@ function EntryModal({
   );
   const [item, setItem] = useState("");
   const [amount, setAmount] = useState("");
-  const [categoryId, setCategoryId] = useState("");
+  // 預設就選好該收/支別的第一個種類（不用再點）
+  const [categoryId, setCategoryId] = useState(
+    categories.find((c) => c.kind === "expense")?.id ?? ""
+  );
   const [occurredOn, setOccurredOn] = useState(todayISO());
-  const [showCat, setShowCat] = useState(false);
   const [busy, setBusy] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -449,7 +451,7 @@ function EntryModal({
     if (again) {
       setItem("");
       setAmount("");
-      setCategoryId("");
+      setCategoryId(categories.find((c) => c.kind === kind)?.id ?? "");
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 1200);
     } else {
@@ -466,7 +468,7 @@ function EntryModal({
               key={k}
               onClick={() => {
                 setKind(k);
-                setCategoryId("");
+                setCategoryId(categories.find((c) => c.kind === k)?.id ?? "");
               }}
               className={`flex-1 rounded-xl border py-2 text-sm font-medium transition active:scale-95 ${
                 kind === k
@@ -487,7 +489,6 @@ function EntryModal({
             value={item}
             onChange={(e) => setItem(e.target.value)}
             placeholder="例：品言學費 / 房租 / 文具"
-            autoFocus
           />
         </Field>
 
@@ -522,26 +523,17 @@ function EntryModal({
           </Field>
         )}
 
-        {showCat ? (
-          <Field label="分類" hint="（選填）">
-            <Select
-              value={categoryId}
-              onChange={setCategoryId}
-              placeholder="未分類"
-              options={[
-                { value: "", label: "未分類" },
-                ...cats.map((c) => ({ value: c.id, label: c.name })),
-              ]}
-            />
-          </Field>
-        ) : (
-          <button
-            onClick={() => setShowCat(true)}
-            className="text-xs text-black/45 underline underline-offset-2"
-          >
-            ＋ 加分類（選填，月結報表會用到）
-          </button>
-        )}
+        <Field label="種類" hint="（月結報表會用到）">
+          <Select
+            value={categoryId}
+            onChange={setCategoryId}
+            placeholder="未分類"
+            options={[
+              { value: "", label: "未分類" },
+              ...cats.map((c) => ({ value: c.id, label: c.name })),
+            ]}
+          />
+        </Field>
 
         {err && <p className="text-sm text-brand">{err}</p>}
         {savedFlash && (

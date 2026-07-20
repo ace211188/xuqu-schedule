@@ -172,24 +172,27 @@ export function Modal({
   }, [onClose]);
 
   return (
+    // 整層可捲動：鍵盤彈出/內容變高時自然捲動，不會把底部彈窗頂到亂跳
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-0 backdrop-blur-[1px] sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/30 backdrop-blur-[1px]"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-5 shadow-xl sm:rounded-3xl"
-      >
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-base font-bold text-navy">{title}</h3>
-          <button
-            onClick={onClose}
-            className="rounded-full px-2 text-lg text-black/40 hover:text-black/70"
-          >
-            ✕
-          </button>
+      <div className="flex min-h-full items-end justify-center p-0 sm:items-center sm:p-4">
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="acc-sheet w-full max-w-md rounded-t-3xl bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-xl sm:rounded-3xl sm:pb-5"
+        >
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-base font-bold text-navy">{title}</h3>
+            <button
+              onClick={onClose}
+              className="rounded-full px-2 text-lg text-black/40 hover:text-black/70"
+            >
+              ✕
+            </button>
+          </div>
+          {children}
         </div>
-        {children}
       </div>
     </div>
   );

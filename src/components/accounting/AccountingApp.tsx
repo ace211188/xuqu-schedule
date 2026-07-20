@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { Teacher } from "@/lib/useAuth";
 import { useAccountingData } from "./useAccountingData";
+import { AnimatedTitle, Particles } from "./anim";
 import Dashboard from "./Dashboard";
 import Reimbursements from "./Reimbursements";
 import Collections from "./Collections";
@@ -60,10 +61,15 @@ export default function AccountingApp({
   const tabs = TABS.filter((t) => !t.adminOnly || teacher.is_admin);
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-6">
+    <main className="relative mx-auto min-h-screen w-full max-w-3xl overflow-hidden px-4 py-6">
+      <Particles />
+      <div className="relative z-10">
       <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-navy">記帳 · 代墊 · 收款</h1>
+          <AnimatedTitle
+            text="記帳 · 代墊 · 收款"
+            className="text-xl font-bold text-navy"
+          />
           <p className="text-sm text-black/60">
             {teacher.name}
             {teacher.is_admin ? "（管理者）" : "（負責人）"}
@@ -143,6 +149,7 @@ export default function AccountingApp({
           {tab === "settings" && teacher.is_admin && <Settings data={data} />}
         </div>
       )}
+      </div>
     </main>
   );
 }
