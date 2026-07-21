@@ -1,6 +1,6 @@
 # 記帳 / 代墊 / 收款功能 — 開發交接記錄
 
-> 最後更新：2026-07-20（已上線 GitHub Pages、Supabase 已設定、多輪 UX 迭代完成）
+> 最後更新：2026-07-21（效能優化＋修正「金額顯示不出來」＋新增總額顯示）
 > 分支：`main`（已 commit + push + 自動部署；Supabase schema 已執行）
 > 線上：https://ace211188.github.io/xuqu-schedule/
 > 完整設計計畫：`C:\Users\USER\.claude\plans\immutable-waddling-wadler.md`
@@ -81,17 +81,58 @@
 
 ## 變更紀錄
 
+### 2026-07-21（效能優化 + 修正金額顯示不出來 + 新增總額）
+
+在新電腦（`C:\Users\user\Desktop\宇群AI\排課記帳系統\xuqu-schedule`）clone 後進行。起因：宇群回報記帳模組「超卡頓」，以及「彙總與流水帳都看不到總額」。
+
+#### 🐛 根本原因：金額被動畫吃掉（重要）
+`CountMoney` 的數字 count-up 動畫是用 `requestAnimationFrame` 逐幀改寫 `textContent`，
+等於**「金額正不正確」取決於動畫有沒有跑完**。rAF 在背景分頁、省電模式、部分手機瀏覽器
+會被節流甚至完全不觸發 → 文字永遠停在動畫起點（通常是 0），畫面上等同看不到金額。
+實測（假資料預覽頁）重現：流水帳表格內是 `$98,200`，上方餘額卻顯示 `$0`。
+
+**修法：拿掉數字跳動動畫，金額改由 React 直接渲染。** 金額是資料不是裝飾，任何情況下
+都必須正確。順帶也省掉每秒 60 次 DOM 寫入。`CountMoney` 元件與呼叫端 API 保留不變
+（`duration` 參數標為 deprecated），日後若要加回動畫，必須確保「動畫失效時數字仍正確」。
+
+#### ⚡ 效能（卡頓）
+| 問題 | 修法 |
+|---|---|
+| 背景粒子 16 顆無限動畫、帶永久 `will-change`，且蓋在會隨內容長高的 `<main>` 上 | 改 `position: fixed` 視窗大小圖層 + `contain: strict`；移除永久 `will-change`（動畫中瀏覽器本就會自動提升圖層）；16→8 顆；手機／低階機（`hardwareConcurrency<=4`）不渲染 |
+| `useCountUp` 每幀 `setState`，每秒觸發 60 次 React 重繪 | 連同動畫一併移除（見上） |
+| `Ledger` 手機列表與桌機表格**兩套 DOM 同時渲染**、只用 CSS 藏一套 | 用 `useIsMobile()` 只渲染需要的那套，DOM 節點減半 |
+| 流水帳一次渲染全部分錄；搜尋每個按鍵重算重畫全表 | 每批 80 筆 +「載入更多」；搜尋改 `useDeferredValue`；畫面外的列用 `content-visibility: auto` 跳過排版繪製 |
+| 彈窗 `backdrop-blur`（手機掉幀元凶） | 移除（原本只有 1px，視覺上幾乎無感） |
+| `useAccountingData` 每次 render 回傳新物件，讓下游所有 `useMemo` 失效 | 用 `useMemo` 記憶化；`LedgerTable` 加 `memo` + `onDelete` 用 `useCallback` 穩定 |
+| `acc-hover` 在觸控裝置也掛 hover 轉場 | 包進 `@media (hover: hover)` |
+
+#### ✨ 新增：總額顯示（三處，皆已實測驗證）
+1. **總餘額（所有帳戶加總）** — 彙總頁「各帳戶餘額」上方大字卡；流水帳標題列新增「總」膠囊，與單一帳戶餘額並列。轉帳在帳戶間互抵，故直接加總即為機構總資金。
+2. **記一筆／轉帳即時試算** — 記一筆顯示「目前餘額 → 這筆 → 存檔後餘額」，打字即時更新，存檔後為負會標紅；轉帳顯示兩邊帳戶各自的「轉帳前 → 轉帳後」。
+3. **流水帳收支合計** — 帳戶層級「共 N 筆 · 收 · 支」；搜尋結果頂端「符合筆數 · 收 · 支 · 淨額」。
+
+#### 🔧 本機環境
+- 已安裝 pnpm，**刻意固定在 v10** 對齊 CI（`pnpm/action-setup@v4` version: 10）。pnpm 11 會對 `pnpm-workspace.yaml` 的 `ignoredBuiltDependencies` 要求互動式確認而中斷安裝。
+- `.env.local` 已建立（值取自 `deploy.yml` 內本來就公開的 anon key，該檔在 `.gitignore` 內）。
+- `.claude/launch.json` 已在**上層目錄**建立（dev server 指令為 `pnpm -C xuqu-schedule dev`）。
+
+#### ⚠️ 已知狀態 / 待辦
+- `pnpm lint` 有 **18 個既有問題**（16 error + 2 warning），本次改動前後數量相同，**非本次造成**。多為 React Compiler 的 `set-state-in-effect` 規則，散落在 8 個檔案。CI 只跑 `build` 不跑 `lint`。
+- **負責人（非 admin）身分的彙總頁完全沒有任何餘額區塊** —— 餘額只存在於管理者專屬的 `AdminSummary`。若日後要讓負責人看到金額，需一併處理 Supabase RLS（`acc_account_balances` 檢視的讀取權限）。
+- 承 7/20：`_tmp_user.mjs` 從 git 歷史徹底清除（force-push）**仍未執行**。
+- 驗證方式：本次用臨時預覽頁 `src/app/preview-tmp/page.tsx` 掛假資料實測 UI（因無法登入 Supabase），**驗證後已刪除**。日後若要再驗證可比照辦理。
+
 ### 2026-07-20（上線後多輪 UX 迭代）
 - **上線**：合併到 `main` → GitHub Actions 部署到 GitHub Pages（期間遇 GitHub Actions 全球故障，排隊後成功）。
 - **角色**：`teachers` 缺 update 政策會讓設定頁開關失效 → 補管理者 update RLS。發現另有獨立「管理員」帳號；將「宇群」帳號設為 `is_admin` 使其同時具管理員＋一般老師(代墊/收款)功能。
 - **導覽**：宇群登入**預設進記帳**；記帳/排課後台/我的排課三者可互相切換（`page.tsx` view 狀態 + 各頁頂欄切換鈕）。純排課的「管理員」帳號仍預設進排課後台。
 - **流水帳改版**（管理員專屬，避免負責人看到薪資）：依月份分組、本月預設展開；桌機為 日期/項目/收入/支出/餘額 表，**手機改為緊湊列表**（不左右捲）；餘額用權威餘額往回推算。記一筆（含「存並再記一筆」）＋內部轉帳。
 - **月結報表**（新分頁「月結」）：選月份 → 總收入/支出/淨額、分類長條圖、期末各帳戶餘額。`scripts/send-monthly-report.mjs` + `.github/workflows/accounting-monthly.yml` 每月 5 號推播上月摘要。
-- **動效**：背景漂浮粒子、標題逐字浮現、數字 count-up、卡片浮起、動畫式下拉選單 `Select`、彈窗滑入、長條圖生長、分頁淡入（全部尊重 prefers-reduced-motion）。
+- **動效**：背景漂浮粒子、標題逐字浮現、數字 count-up、卡片浮起、動畫式下拉選單 `Select`、彈窗滑入、長條圖生長、分頁淡入（全部尊重 prefers-reduced-motion）。<br>※ 其中「數字 count-up」與部分粒子設定已於 2026-07-21 因效能與金額顯示錯誤而移除／調整，詳見上方 7/21 紀錄。
 - **手機記一筆穩定化**：彈窗改整層可捲動、移除 autoFocus（避免鍵盤頂歪）；分類下拉自動判斷上下展開。
 - **記一筆種類**：分類欄位改為**預設顯示且自動選好第一個**（依收/支別）。
 - **安全**：一支臨時腳本 `_tmp_user.mjs`（含無效測試假密碼、帳號從未建立）誤入 commit，已從最新版移除；GitGuardian 曾告警。**待辦：從 git 歷史徹底清除（force-push）尚未執行——需宇群明確授權破壞性 git 操作。**
 - **可直接操作 Supabase**：service_role 金鑰存於本機 `.env.local`（git 忽略、未上傳），可用一次性 node 腳本做管理操作（用完即刪）。
 
 ### 主要檔案（記帳模組，`src/components/accounting/`）
-`AccountingApp.tsx`(外殼/分頁/粒子/標題) · `Dashboard.tsx`(彙總) · `Ledger.tsx`(流水帳) · `Monthly.tsx`(月結) · `Reimbursements.tsx`(代墊) · `Collections.tsx`(收款) · `Settings.tsx`(帳戶/類別/成員) · `ui.tsx`(共用元件＋動畫 `Select`) · `anim.tsx`(count-up/粒子/標題/Reveal) · `Receipts.tsx` · `useAccountingData.ts`。資料層 `src/lib/accounting.ts`。
+`AccountingApp.tsx`(外殼/分頁/粒子/標題) · `Dashboard.tsx`(彙總) · `Ledger.tsx`(流水帳) · `Monthly.tsx`(月結) · `Reimbursements.tsx`(代墊) · `Collections.tsx`(收款) · `Settings.tsx`(帳戶/類別/成員) · `ui.tsx`(共用元件＋動畫 `Select`) · `anim.tsx`(金額顯示/粒子/標題/Reveal/`useIsMobile`/`useLiteMotion`) · `Receipts.tsx` · `useAccountingData.ts`。資料層 `src/lib/accounting.ts`。

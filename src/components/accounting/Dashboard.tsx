@@ -6,6 +6,7 @@ import { fmtMoney, type Reimbursement } from "@/lib/accounting";
 import type { AccountingData } from "./useAccountingData";
 import type { AccountingTab } from "./AccountingApp";
 import { Card, Empty, Money, SectionTitle } from "./ui";
+import { CountMoney } from "./anim";
 
 export default function Dashboard({
   teacher,
@@ -69,6 +70,11 @@ function AdminSummary({
   );
 
   const payTotal = readyToPay.reduce((s, r) => s + r.amount, 0);
+
+  const totalBalance = useMemo(
+    () => balances.reduce((s, b) => s + b.balance, 0),
+    [balances]
+  );
 
   // 待付款彙總：每人應付合計
   const perPerson = useMemo(() => {
@@ -161,6 +167,16 @@ function AdminSummary({
 
       <section>
         <SectionTitle>各帳戶餘額</SectionTitle>
+        {/* 總餘額：所有帳戶加總（轉帳互抵，故直接加總即為總資金） */}
+        <div className="mb-2 flex items-baseline justify-between rounded-2xl border border-navy/20 bg-navy/[0.04] px-4 py-3">
+          <span className="text-sm font-medium text-black/60">總餘額</span>
+          <CountMoney
+            value={totalBalance}
+            className={`text-2xl font-bold ${
+              totalBalance < 0 ? "text-brand" : "text-navy"
+            }`}
+          />
+        </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {balances.map((b) => (
             <Card key={b.id} className="p-3">

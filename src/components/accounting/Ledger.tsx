@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import type { Teacher } from "@/lib/useAuth";
 import {
   createEntry,
@@ -10,6 +17,7 @@ import {
   fmtMoney,
   todayISO,
   type Account,
+  type AccountBalance,
   type Category,
   type Entry,
 } from "@/lib/accounting";
@@ -23,7 +31,10 @@ import {
   Select,
   inputCls,
 } from "./ui";
-import { CountMoney } from "./anim";
+import { CountMoney, useIsMobile } from "./anim";
+
+// 一次先畫這麼多列，其餘按「載入更多」再補（避免一次塞幾百個 DOM 節點）
+const PAGE = 80;
 
 const SOURCE_LABEL: Record<Entry["source_type"], string> = {
   manual: "",
@@ -72,6 +83,12 @@ export default function Ledger({
     accounts.find((a) => a.id === acctId)?.opening_balance ??
     0;
 
+  // 全部帳戶加總（轉帳在帳戶之間互抵，所以直接加總就是機構總資金）
+  const totalBalance = useMemo(
+    () => balances.reduce((s, b) => s + b.balance, 0),
+    [balances]
+  );
+
   // 該帳戶分錄（日期新→舊），用權威餘額往回推每列餘額
   const rows: Row[] = useMemo(() => {
     const list = entries.filter((e) => e.account_id === acctId);
@@ -109,6 +126,17 @@ export default function Ledger({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groups.length]);
 
+  // 穩定的 callback，否則 LedgerTable 的 memo 會每次都失效
+  const onDelete = useCallback(
+    async (id: string) => {
+      if (!confirm("刪除這筆？")) return;
+      const { error } = await deleteEntry(id);
+      if (error) alert(error);
+      else await refresh();
+    },
+    [refresh]
+  );
+
   function toggleMonth(key: string) {
     setOpenMonths((prev) => {
       const next = new Set(prev);
@@ -118,16 +146,40 @@ export default function Ledger({
     });
   }
 
-  const searching = q.trim().length > 0;
+  // 搜尋用 deferred value：打字時輸入框先更新，重算長列表放到低優先度，不卡輸入
+  const deferredQ = useDeferredValue(q);
+  const searching = deferredQ.trim().length > 0;
   const searchRows = useMemo(() => {
     if (!searching) return [];
-    const kw = q.trim();
+    const kw = deferredQ.trim();
     return rows.filter(
       (r) =>
         (r.note ?? "").includes(kw) ||
         (r.category_id ? catName.get(r.category_id) ?? "" : "").includes(kw)
     );
-  }, [rows, q, catName, searching]);
+  }, [rows, deferredQ, catName, searching]);
+
+  // 搜尋結果的收支合計
+  const searchTotals = useMemo(() => {
+    let income = 0;
+    let expense = 0;
+    for (const r of searchRows) {
+      if (r.signed_amount > 0) income += r.signed_amount;
+      else expense += -r.signed_amount;
+    }
+    return { income, expense, net: income - expense };
+  }, [searchRows]);
+
+  // 目前帳戶全部分錄的收支合計（不分月份）
+  const acctTotals = useMemo(() => {
+    let income = 0;
+    let expense = 0;
+    for (const r of rows) {
+      if (r.signed_amount > 0) income += r.signed_amount;
+      else expense += -r.signed_amount;
+    }
+    return { income, expense };
+  }, [rows]);
 
   return (
     <div className="space-y-3">
@@ -145,6 +197,14 @@ export default function Ledger({
         <span className="acc-pop rounded-full bg-navy px-3 py-1.5 text-sm font-semibold text-white">
           餘額 <CountMoney value={currentBalance} />
         </span>
+        {balances.length > 1 && (
+          <span
+            className="acc-pop rounded-full border border-navy/25 bg-white px-3 py-1.5 text-sm font-semibold text-navy"
+            title="所有帳戶加總"
+          >
+            總 <CountMoney value={totalBalance} />
+          </span>
+        )}
         {teacher.is_admin && (
           <div className="ml-auto flex gap-2">
             <GhostBtn onClick={() => setModal("transfer")}>⇄ 轉帳</GhostBtn>
@@ -152,6 +212,15 @@ export default function Ledger({
           </div>
         )}
       </div>
+
+      {/* 這個帳戶的累計收支 */}
+      {rows.length > 0 && (
+        <div className="flex gap-3 px-1 text-xs text-black/50">
+          <span>共 {rows.length} 筆</span>
+          <span className="text-[#5f7a4f]">收 {fmtMoney(acctTotals.income)}</span>
+          <span className="text-brand">支 {fmtMoney(acctTotals.expense)}</span>
+        </div>
+      )}
 
       <input
         className={inputCls}
@@ -165,17 +234,29 @@ export default function Ledger({
         searchRows.length === 0 ? (
           <Empty>沒有符合「{q}」的項目</Empty>
         ) : (
-          <LedgerTable
-            rows={searchRows}
-            catName={catName}
-            isAdmin={teacher.is_admin}
-            onDelete={async (id) => {
-              if (!confirm("刪除這筆？")) return;
-              const { error } = await deleteEntry(id);
-              if (error) alert(error);
-              else await refresh();
-            }}
-          />
+          <div className="overflow-hidden rounded-2xl border border-black/10 bg-white/70">
+            {/* 搜尋結果合計 */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-black/5 bg-black/[0.02] px-4 py-2.5 text-xs">
+              <span className="font-medium text-navy">
+                符合「{deferredQ.trim()}」共 {searchRows.length} 筆
+              </span>
+              <span className="text-[#5f7a4f]">
+                收 {fmtMoney(searchTotals.income)}
+              </span>
+              <span className="text-brand">
+                支 {fmtMoney(searchTotals.expense)}
+              </span>
+              <span className="ml-auto font-semibold text-black/70">
+                淨額 {fmtMoney(searchTotals.net)}
+              </span>
+            </div>
+            <LedgerTable
+              rows={searchRows}
+              catName={catName}
+              isAdmin={teacher.is_admin}
+              onDelete={onDelete}
+            />
+          </div>
         )
       ) : groups.length === 0 ? (
         <Empty>這個帳戶還沒有紀錄</Empty>
@@ -217,12 +298,7 @@ export default function Ledger({
                       rows={g.rows}
                       catName={catName}
                       isAdmin={teacher.is_admin}
-                      onDelete={async (id) => {
-                        if (!confirm("刪除這筆？")) return;
-                        const { error } = await deleteEntry(id);
-                        if (error) alert(error);
-                        else await refresh();
-                      }}
+                      onDelete={onDelete}
                     />
                   </div>
                 )}
@@ -241,6 +317,7 @@ export default function Ledger({
           teacher={teacher}
           accounts={accounts.filter((a) => a.active)}
           categories={categories.filter((c) => c.active)}
+          balances={balances}
           defaultAccountId={acctId}
           onClose={() => setModal(null)}
           onSaved={async () => {
@@ -253,6 +330,7 @@ export default function Ledger({
         <TransferModal
           teacher={teacher}
           accounts={accounts.filter((a) => a.active)}
+          balances={balances}
           defaultFromId={acctId}
           onClose={() => setModal(null)}
           onSaved={async () => {
@@ -270,7 +348,7 @@ function shortDate(iso: string) {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-function LedgerTable({
+const LedgerTable = memo(function LedgerTable({
   rows,
   catName,
   isAdmin,
@@ -281,17 +359,42 @@ function LedgerTable({
   isAdmin: boolean;
   onDelete: (id: string) => void;
 }) {
-  return (
-    <>
-      {/* 手機：緊湊列表（不用左右捲） */}
-      <div className="sm:hidden">
-        {rows.map((r) => {
+  // 只渲染目前螢幕需要的那一套版面（原本手機列表＋桌機表格都畫，DOM 節點多一倍）
+  const isMobile = useIsMobile();
+
+  // 分批顯示，避免一次塞入整年份的分錄。
+  // rows 換了就重置回第一頁（render 期間調整 state，比 effect 少一次重繪）
+  const [limit, setLimit] = useState(PAGE);
+  const [prevRows, setPrevRows] = useState(rows);
+  if (prevRows !== rows) {
+    setPrevRows(rows);
+    setLimit(PAGE);
+  }
+  const shown = rows.length > limit ? rows.slice(0, limit) : rows;
+  const more = rows.length - shown.length;
+
+  const moreBtn =
+    more > 0 ? (
+      <button
+        onClick={() => setLimit((n) => n + PAGE * 2)}
+        className="w-full border-t border-black/5 py-3 text-center text-xs text-black/45 transition hover:bg-black/[0.02]"
+      >
+        還有 {more} 筆，載入更多
+      </button>
+    ) : null;
+
+  if (isMobile) {
+    return (
+      <>
+        {/* 手機：緊湊列表（不用左右捲） */}
+        <div>
+          {shown.map((r) => {
           const tag = SOURCE_LABEL[r.source_type];
           const inc = r.signed_amount > 0;
           return (
             <div
               key={r.id}
-              className="flex items-center gap-2 border-t border-black/5 px-3 py-2.5 first:border-t-0"
+              className="acc-row flex items-center gap-2 border-t border-black/5 px-3 py-2.5 first:border-t-0"
             >
               <div className="w-9 shrink-0 text-[11px] leading-tight text-black/45">
                 {shortDate(r.occurred_on)}
@@ -332,10 +435,16 @@ function LedgerTable({
             </div>
           );
         })}
-      </div>
+        </div>
+        {moreBtn}
+      </>
+    );
+  }
 
+  return (
+    <>
       {/* 桌機：完整表格 */}
-      <div className="hidden overflow-x-auto sm:block">
+      <div className="overflow-x-auto">
       <table className="w-full min-w-[520px] text-sm">
         <thead>
           <tr className="bg-black/[0.03] text-xs text-black/50">
@@ -348,7 +457,7 @@ function LedgerTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => {
+          {shown.map((r) => {
             const income = r.signed_amount > 0 ? r.signed_amount : 0;
             const expense = r.signed_amount < 0 ? -r.signed_amount : 0;
             const tag = SOURCE_LABEL[r.source_type];
@@ -395,14 +504,16 @@ function LedgerTable({
         </tbody>
       </table>
       </div>
+      {moreBtn}
     </>
   );
-}
+});
 
 function EntryModal({
   teacher,
   accounts,
   categories,
+  balances,
   defaultAccountId,
   onClose,
   onSaved,
@@ -410,6 +521,7 @@ function EntryModal({
   teacher: Teacher;
   accounts: Account[];
   categories: Category[];
+  balances: AccountBalance[];
   defaultAccountId: string;
   onClose: () => void;
   onSaved: () => void;
@@ -431,6 +543,19 @@ function EntryModal({
 
   const cats = categories.filter((c) => c.kind === kind);
   const amountNum = Number(amount);
+
+  // 存檔後該帳戶餘額會變成多少（金額沒填就先顯示目前餘額）
+  const acctBalance =
+    balances.find((b) => b.id === accountId)?.balance ??
+    accounts.find((a) => a.id === accountId)?.opening_balance ??
+    0;
+  const delta =
+    Number.isFinite(amountNum) && amountNum > 0
+      ? kind === "expense"
+        ? -amountNum
+        : amountNum
+      : 0;
+  const afterBalance = acctBalance + delta;
 
   async function save(again: boolean) {
     setErr(null);
@@ -535,6 +660,39 @@ function EntryModal({
           />
         </Field>
 
+        {/* 存檔後餘額試算 */}
+        <div className="rounded-xl bg-black/[0.03] px-3 py-2.5 text-sm">
+          <div className="flex items-center justify-between text-black/55">
+            <span>目前餘額</span>
+            <span className="tabular-nums">{fmtMoney(acctBalance)}</span>
+          </div>
+          <div className="mt-1 flex items-center justify-between text-black/55">
+            <span>這筆</span>
+            <span
+              className={`tabular-nums ${
+                delta === 0
+                  ? "text-black/35"
+                  : delta > 0
+                  ? "text-[#5f7a4f]"
+                  : "text-brand"
+              }`}
+            >
+              {delta > 0 ? "+" : ""}
+              {fmtMoney(delta)}
+            </span>
+          </div>
+          <div className="mt-1.5 flex items-center justify-between border-t border-black/10 pt-1.5 font-semibold text-navy">
+            <span>存檔後餘額</span>
+            <span
+              className={`tabular-nums ${
+                afterBalance < 0 ? "text-brand" : ""
+              }`}
+            >
+              {fmtMoney(afterBalance)}
+            </span>
+          </div>
+        </div>
+
         {err && <p className="text-sm text-brand">{err}</p>}
         {savedFlash && (
           <p className="acc-reveal text-sm text-[#5f7a4f]">✓ 已記一筆，繼續～</p>
@@ -555,12 +713,14 @@ function EntryModal({
 function TransferModal({
   teacher,
   accounts,
+  balances,
   defaultFromId,
   onClose,
   onSaved,
 }: {
   teacher: Teacher;
   accounts: Account[];
+  balances: AccountBalance[];
   defaultFromId: string;
   onClose: () => void;
   onSaved: () => void;
@@ -576,6 +736,15 @@ function TransferModal({
   const [err, setErr] = useState<string | null>(null);
 
   const amountNum = Number(amount);
+
+  // 兩邊帳戶的轉帳前後餘額
+  const balOf = (id: string) =>
+    balances.find((b) => b.id === id)?.balance ??
+    accounts.find((a) => a.id === id)?.opening_balance ??
+    0;
+  const move = Number.isFinite(amountNum) && amountNum > 0 ? amountNum : 0;
+  const fromBal = balOf(fromId);
+  const toBal = balOf(toId);
 
   async function save() {
     setErr(null);
@@ -644,6 +813,32 @@ function TransferModal({
             placeholder="選填"
           />
         </Field>
+        {/* 轉帳前後餘額試算 */}
+        {fromId && toId && fromId !== toId && (
+          <div className="rounded-xl bg-black/[0.03] px-3 py-2.5 text-sm">
+            <div className="flex items-center justify-between text-black/55">
+              <span className="min-w-0 truncate">
+                轉出 · {accounts.find((a) => a.id === fromId)?.name}
+              </span>
+              <span className="shrink-0 tabular-nums">
+                {fmtMoney(fromBal)} →{" "}
+                <b className={fromBal - move < 0 ? "text-brand" : "text-navy"}>
+                  {fmtMoney(fromBal - move)}
+                </b>
+              </span>
+            </div>
+            <div className="mt-1 flex items-center justify-between text-black/55">
+              <span className="min-w-0 truncate">
+                轉入 · {accounts.find((a) => a.id === toId)?.name}
+              </span>
+              <span className="shrink-0 tabular-nums">
+                {fmtMoney(toBal)} →{" "}
+                <b className="text-navy">{fmtMoney(toBal + move)}</b>
+              </span>
+            </div>
+          </div>
+        )}
+
         {err && <p className="text-sm text-brand">{err}</p>}
         <div className="flex justify-end gap-2 pt-1">
           <GhostBtn onClick={onClose}>取消</GhostBtn>

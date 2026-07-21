@@ -182,7 +182,7 @@ export function Modal({
     // 穩穩釘在底部的彈窗：整體不捲動（不會亂移），標題固定、只有內容區自己捲
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-[1px] sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
     >
       <div
         onClick={(e) => e.stopPropagation()}

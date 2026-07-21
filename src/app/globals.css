@@ -352,13 +352,23 @@ body {
     opacity: 0;
   }
 }
+/* 粒子圖層：固定在視窗大小，不隨內容長度變高（原本蓋整頁，捲動時合成很貴） */
+.particle-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict; /* 把重繪隔離在這層內，不影響頁面其他部分 */
+}
 .particle {
   position: absolute;
   bottom: -20px;
   border-radius: 9999px;
   animation: floatUp var(--dur, 14s) linear infinite;
   animation-delay: var(--delay, 0s);
-  will-change: transform, opacity;
+  /* 不用 will-change：瀏覽器對 transform/opacity 的執行中動畫會自動提升圖層，
+     永久 will-change 會讓每顆粒子都常駐一個合成層。 */
 }
 
 /* 標題文字：逐字浮現 */
@@ -393,13 +403,21 @@ body {
   animation: menuIn 0.16s ease-out;
 }
 
-/* 互動：滑過浮起 */
+/* 長列表：畫面外的列直接跳過排版與繪製（流水帳幾百筆時差別很大） */
+.acc-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 52px;
+}
+
+/* 互動：滑過浮起（只在有真正 hover 的裝置上啟用，手機不需要） */
 .acc-hover {
   transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
-.acc-hover:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.28);
+@media (hover: hover) {
+  .acc-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.28);
+  }
 }
 .acc-hover:active {
   transform: translateY(0) scale(0.99);
@@ -434,7 +452,8 @@ body {
   .title-char {
     animation: none;
   }
-  .particle {
+  .particle,
+  .particle-layer {
     display: none;
   }
   .acc-hover {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   fetchAccounts,
@@ -79,15 +79,29 @@ export function useAccountingData(isAdmin: boolean): AccountingData {
     };
   }, [refresh]);
 
-  return {
-    loading,
-    accounts,
-    balances,
-    categories,
-    reimbursements,
-    collections,
-    entries,
-    teacherNames,
-    refresh,
-  };
+  // 記憶化：不然每次 render 都是新物件，下游的 useMemo / memo 全部失效
+  return useMemo(
+    () => ({
+      loading,
+      accounts,
+      balances,
+      categories,
+      reimbursements,
+      collections,
+      entries,
+      teacherNames,
+      refresh,
+    }),
+    [
+      loading,
+      accounts,
+      balances,
+      categories,
+      reimbursements,
+      collections,
+      entries,
+      teacherNames,
+      refresh,
+    ]
+  );
 }
