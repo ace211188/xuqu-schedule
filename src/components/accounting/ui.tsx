@@ -172,25 +172,25 @@ export function Modal({
   }, [onClose]);
 
   return (
-    // 整層可捲動：鍵盤彈出/內容變高時自然捲動，不會把底部彈窗頂到亂跳
+    // 穩穩釘在底部的彈窗：整體不捲動（不會亂移），標題固定、只有內容區自己捲
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/30 backdrop-blur-[1px]"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-[1px] sm:items-center sm:p-4"
     >
-      <div className="flex min-h-full items-end justify-center p-0 sm:items-center sm:p-4">
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="acc-sheet w-full max-w-md rounded-t-3xl bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-xl sm:rounded-3xl sm:pb-5"
-        >
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-base font-bold text-navy">{title}</h3>
-            <button
-              onClick={onClose}
-              className="rounded-full px-2 text-lg text-black/40 hover:text-black/70"
-            >
-              ✕
-            </button>
-          </div>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="acc-sheet flex max-h-[88dvh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-3xl"
+      >
+        <div className="flex shrink-0 items-center justify-between px-5 pb-3 pt-5">
+          <h3 className="text-base font-bold text-navy">{title}</h3>
+          <button
+            onClick={onClose}
+            className="-mr-1 rounded-full px-2 text-lg text-black/40 hover:text-black/70"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="overflow-y-auto overscroll-contain px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
           {children}
         </div>
       </div>
