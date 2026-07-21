@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { fmtMoney } from "@/lib/accounting";
 
 // 金額（支出紅、收入綠、其他預設）
@@ -159,6 +160,12 @@ export function Modal({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  // 掛到 <body>（用 portal），避開帶 transform 動畫的祖先讓 fixed 失效的問題
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -171,7 +178,7 @@ export function Modal({
     };
   }, [onClose]);
 
-  return (
+  const content = (
     // 穩穩釘在底部的彈窗：整體不捲動（不會亂移），標題固定、只有內容區自己捲
     <div
       onClick={onClose}
@@ -196,6 +203,8 @@ export function Modal({
       </div>
     </div>
   );
+
+  return mounted ? createPortal(content, document.body) : null;
 }
 
 // 自訂下拉：展開有動畫、比原生 select 好看且滑順
