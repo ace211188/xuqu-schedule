@@ -103,7 +103,11 @@ export default function Collections({
               }
               onEdit={() => setFormFor(c)}
               onDelete={async () => {
-                if (!confirm("確定刪除這筆收款？")) return;
+                const msg =
+                  c.status === "confirmed"
+                    ? "這筆已確認入帳，刪除會一併移除流水帳的入帳（與找零）分錄。確定刪除？"
+                    : "確定刪除這筆收款？";
+                if (!confirm(msg)) return;
                 const { error } = await deleteCollection(c.id);
                 if (error) alert(error);
                 else await refresh();
@@ -267,7 +271,7 @@ function CollectionCard({
             取消確認
           </GhostBtn>
         )}
-        {canDelete && c.status !== "confirmed" && (
+        {canDelete && (
           <GhostBtn tone="danger" onClick={onDelete}>
             刪除
           </GhostBtn>
