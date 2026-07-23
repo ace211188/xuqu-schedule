@@ -7,6 +7,7 @@ import {
   createCollection,
   deleteCollection,
   fmtDate,
+  fmtMoney,
   todayISO,
   updateCollection,
   type Account,
@@ -59,6 +60,11 @@ export default function Collections({
     [accounts]
   );
   const heldAccounts = useMemo(() => accounts.filter((a) => a.active), [accounts]);
+  // 找零要扣的零用金帳戶（type='petty'）；找不到就 null，表單會提示
+  const pettyAccount = useMemo(
+    () => accounts.find((a) => a.type === "petty" && a.active) ?? null,
+    [accounts]
+  );
 
   const sorted = useMemo(
     () =>
@@ -123,6 +129,7 @@ export default function Collections({
           teacher={teacher}
           existing={formFor === "new" ? null : formFor}
           categories={incomeCats}
+          pettyAccount={pettyAccount}
           onClose={() => setFormFor(null)}
           onSaved={async () => {
             setFormFor(null);
@@ -213,9 +220,24 @@ function CollectionCard({
             {c.status === "confirmed" && c.held_account_id && (
               <span>入「{acctName.get(c.held_account_id) ?? "—"}」</span>
             )}
+            {c.change_given > 0 && (
+              <span className="text-brand">
+                找零 {fmtMoney(c.change_given)}
+                {c.change_account_id
+                  ? `（${acctName.get(c.change_account_id) ?? "零用金"}）`
+                  : ""}
+              </span>
+            )}
           </div>
         </div>
-        <Money value={c.amount} colored className="shrink-0 text-lg" />
+        <div className="shrink-0 text-right">
+          <Money value={c.amount} colored className="text-lg" />
+          {c.change_given > 0 && (
+            <div className="text-[11px] text-black/45">
+              淨 {fmtMoney(c.amount - c.change_given)}
+            </div>
+          )}
+        </div>
       </div>
 
       {c.status === "rejected" && c.reject_reason && (
@@ -259,12 +281,14 @@ function CollectionForm({
   teacher,
   existing,
   categories,
+  pettyAccount,
   onClose,
   onSaved,
 }: {
   teacher: Teacher;
   existing: Collection | null;
   categories: Category[];
+  pettyAccount: Account | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -277,16 +301,34 @@ function CollectionForm({
     existing?.occurred_on ?? todayISO()
   );
   const [paths, setPaths] = useState<string[]>(existing?.receipt_paths ?? []);
+  // 找零：勾選有無找錢 + 找多少
+  const [hasChange, setHasChange] = useState(
+    existing ? existing.change_given > 0 : false
+  );
+  const [change, setChange] = useState(
+    existing && existing.change_given > 0 ? String(existing.change_given) : ""
+  );
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const amountNum = Number(amount);
+  const changeNum = hasChange ? Number(change) : 0;
+  const net = amountNum - changeNum; // 淨額（實收 − 找零）= 真正的學費
 
   async function save() {
     setErr(null);
     if (!description.trim()) return setErr("請填寫收款說明");
     if (!amountNum || amountNum <= 0) return setErr("請填寫正確金額");
+    if (hasChange) {
+      if (!pettyAccount)
+        return setErr("找不到零用金帳戶，請先到「設定」建立一個零用金類型的帳戶");
+      if (!changeNum || changeNum <= 0) return setErr("請填寫找零金額");
+      if (changeNum >= amountNum)
+        return setErr("找零金額不能大於或等於實收金額");
+    }
     setBusy(true);
+    const changeGiven = hasChange ? changeNum : 0;
+    const changeAccountId = hasChange ? pettyAccount?.id ?? null : null;
     let res;
     if (!existing) {
       res = await createCollection({
@@ -296,6 +338,8 @@ function CollectionForm({
         description: description.trim(),
         occurredOn,
         receiptPaths: paths,
+        changeGiven,
+        changeAccountId,
       });
     } else {
       const patch: Parameters<typeof updateCollection>[1] = {
@@ -304,6 +348,8 @@ function CollectionForm({
         description: description.trim(),
         occurred_on: occurredOn,
         receipt_paths: paths,
+        change_given: changeGiven,
+        change_account_id: changeAccountId,
       };
       if (existing.status === "rejected") {
         patch.status = "pending_confirm";
@@ -328,7 +374,7 @@ function CollectionForm({
           />
         </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="金額">
+          <Field label="實收金額" hint="（學生實際給的現金）">
             <input
               type="number"
               inputMode="numeric"
@@ -346,6 +392,69 @@ function CollectionForm({
               onChange={(e) => setOccurredOn(e.target.value)}
             />
           </Field>
+        </div>
+
+        {/* 找零：勾選有無找錢，有的話填金額 → 確認入帳時從零用金扣 */}
+        <div className="rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2.5">
+          <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-black/70">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-navy"
+              checked={hasChange}
+              onChange={(e) => setHasChange(e.target.checked)}
+            />
+            有找錢給學生
+            {pettyAccount && (
+              <span className="font-normal text-black/40">
+                （從「{pettyAccount.name}」扣）
+              </span>
+            )}
+          </label>
+
+          {hasChange && (
+            <div className="mt-2.5 space-y-2">
+              <Field label="找零金額">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  className={inputCls}
+                  value={change}
+                  onChange={(e) => setChange(e.target.value)}
+                  placeholder="0"
+                  autoFocus
+                />
+              </Field>
+              {!pettyAccount && (
+                <p className="text-xs text-brand">
+                  ⚠ 找不到零用金帳戶，請先到「設定」建立一個「零用金」類型的帳戶。
+                </p>
+              )}
+              {amountNum > 0 && changeNum > 0 && (
+                <div className="rounded-lg bg-white px-3 py-2 text-xs">
+                  <div className="flex justify-between text-black/55">
+                    <span>實收</span>
+                    <span className="tabular-nums">{fmtMoney(amountNum)}</span>
+                  </div>
+                  <div className="flex justify-between text-black/55">
+                    <span>找零（{pettyAccount?.name ?? "零用金"}）</span>
+                    <span className="tabular-nums text-brand">
+                      −{fmtMoney(changeNum)}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex justify-between border-t border-black/10 pt-1 font-semibold text-navy">
+                    <span>淨額（實際學費）</span>
+                    <span
+                      className={`tabular-nums ${
+                        net < 0 ? "text-brand" : ""
+                      }`}
+                    >
+                      {fmtMoney(net)}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <Field label="類別">
           <select

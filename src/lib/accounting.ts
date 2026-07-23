@@ -77,11 +77,13 @@ export type CollectionStatus = "pending_confirm" | "confirmed" | "rejected";
 export type Collection = {
   id: string;
   collector_id: string;
-  amount: number;
+  amount: number; // 學生實際給的現金（含之後要找的零）
   category_id: string | null;
   description: string;
   occurred_on: string;
   held_account_id: string | null;
+  change_given: number; // 找零金額（0＝沒找零），確認入帳時從零用金扣
+  change_account_id: string | null; // 找零從哪個帳戶出（零用金）
   status: CollectionStatus;
   receipt_paths: string[];
   reject_reason: string | null;
@@ -310,6 +312,8 @@ export async function createCollection(p: {
   description: string;
   occurredOn: string;
   receiptPaths: string[];
+  changeGiven?: number;
+  changeAccountId?: string | null;
 }): Promise<Res> {
   const { error } = await supabase.from("acc_collections").insert({
     collector_id: p.collectorId,
@@ -318,6 +322,8 @@ export async function createCollection(p: {
     description: p.description,
     occurred_on: p.occurredOn,
     receipt_paths: p.receiptPaths,
+    change_given: p.changeGiven ?? 0,
+    change_account_id: p.changeAccountId ?? null,
   });
   return { error: error?.message ?? null };
 }
@@ -335,6 +341,8 @@ export async function updateCollection(
       | "status"
       | "reject_reason"
       | "held_account_id"
+      | "change_given"
+      | "change_account_id"
     >
   >
 ): Promise<Res> {

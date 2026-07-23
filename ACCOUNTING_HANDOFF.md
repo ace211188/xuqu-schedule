@@ -1,6 +1,6 @@
 # 記帳 / 代墊 / 收款功能 — 開發交接記錄
 
-> 最後更新：2026-07-21（效能優化＋修正「金額顯示不出來」＋新增總額顯示）
+> 最後更新：2026-07-21（收款新增「找零」功能，找零自動從零用金扣）
 > 分支：`main`（已 commit + push + 自動部署；Supabase schema 已執行）
 > 線上：https://ace211188.github.io/xuqu-schedule/
 > 完整設計計畫：`C:\Users\USER\.claude\plans\immutable-waddling-wadler.md`
@@ -90,6 +90,24 @@
 - **新增兩個支出類別**：`鐘點支出`、`教材支出`（CSV 有、軟體原本沒有）。CSV 中種類空白的垃圾袋列歸到「行政支出」。
 - **待辦/提醒**：因為全記在教室現金，房租/薪資/學費/宇群增資等在流水帳都顯示為「教室現金」進出，看不出實際走哪個帳戶；日後若要細分需按項目重新分配帳戶。
 - 匯入以 service_role 一次性 node 腳本執行（用完即刪）；CSV 檔未納入 git 追蹤。
+
+### 2026-07-21（收款「找零」功能）
+
+代收現金時常需找零，找零的錢從櫃台零用金出。新增讓收款單記錄找零，並在確認入帳時自動從零用金扣。
+
+**與宇群確認的帳務語意**：收款金額欄填「學生實際給的現金」（例 $3,000），找零另填（例 $200）。
+確認入帳後：入帳帳戶 +$3,000、零用金 −$200，淨額 +$2,800 = 真正學費，帳才會對。
+
+- **DB**（`supabase/collection_change.sql`，宇群已於 Supabase SQL Editor 執行）：
+  - `acc_collections` 加 `change_given numeric default 0`、`change_account_id uuid`（找零從哪個帳戶出）。
+  - 更新觸發器 `acc_collection_ledger`：確認入帳時，除了原本 +實收入帳，若 `change_given>0` 再記一筆 `−change_given` 於 `change_account_id`（note「收款找零：…」，source 同為 collection/本單 id）。取消確認會連同找零分錄一起刪除。
+- **前端**：
+  - `Collections.tsx` 收款表單：金額欄改標「實收金額（學生實際給的現金）」；新增「☑ 有找錢給學生」勾選 + 找零金額欄（標明從 type='petty' 的帳戶扣）；即時試算「實收 − 找零 = 淨額」；防呆（找零需 >0 且 < 實收、無零用金帳戶時擋下）。找零帳戶由前端 `accounts.find(type==='petty')` 解析，不需使用者選。
+  - 收款卡片顯示「找零 $X（帳戶名）」與「淨 $X」。
+  - `src/lib/accounting.ts`：`Collection` 型別加 `change_given`/`change_account_id`；`createCollection`/`updateCollection` 支援這兩欄。
+- **部署順序**：DB migration 必須先跑（否則新欄位不存在，insert 會失敗）。本次為「先跑 SQL → 再 push 部署」。
+- 驗證：假資料臨時預覽頁實測試算 $3,000−$200=$2,800、防呆、卡片顯示皆正確；`pnpm build` 通過（驗證後預覽頁已刪）。
+- ⚠️ 待辦：若日後有**多個** type='petty' 帳戶，前端會取 sort_order 第一個，需改為讓使用者選。目前只有「櫃台零用金」一個，無影響。
 
 ### 2026-07-21（效能優化 + 修正金額顯示不出來 + 新增總額）
 
