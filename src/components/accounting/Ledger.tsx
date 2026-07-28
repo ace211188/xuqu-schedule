@@ -36,6 +36,9 @@ import { CountMoney, useIsMobile } from "./anim";
 // 一次先畫這麼多列，其餘按「載入更多」再補（避免一次塞幾百個 DOM 節點）
 const PAGE = 80;
 
+// 「所有帳戶」的選項值（不會與真實帳戶 id 撞號）
+const ALL = "__all__";
+
 const SOURCE_LABEL: Record<Entry["source_type"], string> = {
   manual: "",
   reimbursement: "代墊",
@@ -65,10 +68,9 @@ export default function Ledger({
     () => accounts.find((a) => a.is_main)?.id ?? accounts[0]?.id ?? "",
     [accounts]
   );
-  const [acctId, setAcctId] = useState("");
-  useEffect(() => {
-    if (!acctId && defaultAcct) setAcctId(defaultAcct);
-  }, [defaultAcct, acctId]);
+  // 預設就看「所有帳戶」的明細；也可切到單一帳戶
+  const [acctId, setAcctId] = useState(ALL);
+  const isAll = acctId === ALL;
 
   const [q, setQ] = useState("");
   const [modal, setModal] = useState<"entry" | "transfer" | null>(null);
@@ -78,10 +80,10 @@ export default function Ledger({
     () => new Map(categories.map((c) => [c.id, c.name])),
     [categories]
   );
-  const currentBalance =
-    balances.find((b) => b.id === acctId)?.balance ??
-    accounts.find((a) => a.id === acctId)?.opening_balance ??
-    0;
+  const acctName = useMemo(
+    () => new Map(accounts.map((a) => [a.id, a.name])),
+    [accounts]
+  );
 
   // 全部帳戶加總（轉帳在帳戶之間互抵，所以直接加總就是機構總資金）
   const totalBalance = useMemo(
@@ -89,9 +91,18 @@ export default function Ledger({
     [balances]
   );
 
-  // 該帳戶分錄（日期新→舊），用權威餘額往回推每列餘額
+  const currentBalance = isAll
+    ? totalBalance
+    : balances.find((b) => b.id === acctId)?.balance ??
+      accounts.find((a) => a.id === acctId)?.opening_balance ??
+      0;
+
+  // 分錄（日期新→舊），用權威餘額往回推每列餘額。
+  // 「所有帳戶」時 list 是全部分錄、餘額欄則是機構總資金的變化。
   const rows: Row[] = useMemo(() => {
-    const list = entries.filter((e) => e.account_id === acctId);
+    const list = isAll
+      ? entries
+      : entries.filter((e) => e.account_id === acctId);
     let running = currentBalance;
     const out: Row[] = [];
     for (const e of list) {
@@ -99,7 +110,7 @@ export default function Ledger({
       running -= e.signed_amount;
     }
     return out;
-  }, [entries, acctId, currentBalance]);
+  }, [entries, acctId, isAll, currentBalance]);
 
   // 依月份分組
   const groups: MonthGroup[] = useMemo(() => {
@@ -189,15 +200,19 @@ export default function Ledger({
           className="w-40"
           value={acctId}
           onChange={setAcctId}
-          options={accounts.map((a) => ({
-            value: a.id,
-            label: a.name + (a.is_main ? "（主）" : ""),
-          }))}
+          options={[
+            { value: ALL, label: "所有帳戶" },
+            ...accounts.map((a) => ({
+              value: a.id,
+              label: a.name + (a.is_main ? "（主）" : ""),
+            })),
+          ]}
         />
         <span className="acc-pop rounded-full bg-navy px-3 py-1.5 text-sm font-semibold text-white">
-          餘額 <CountMoney value={currentBalance} />
+          {isAll ? "總餘額 " : "餘額 "}
+          <CountMoney value={currentBalance} />
         </span>
-        {balances.length > 1 && (
+        {!isAll && balances.length > 1 && (
           <span
             className="acc-pop rounded-full border border-navy/25 bg-white px-3 py-1.5 text-sm font-semibold text-navy"
             title="所有帳戶加總"
@@ -253,13 +268,15 @@ export default function Ledger({
             <LedgerTable
               rows={searchRows}
               catName={catName}
+              acctName={acctName}
+              showAccount={isAll}
               isAdmin={teacher.is_admin}
               onDelete={onDelete}
             />
           </div>
         )
       ) : groups.length === 0 ? (
-        <Empty>這個帳戶還沒有紀錄</Empty>
+        <Empty>{isAll ? "還沒有任何紀錄" : "這個帳戶還沒有紀錄"}</Empty>
       ) : (
         <div className="space-y-2">
           {groups.map((g, i) => {
@@ -297,6 +314,8 @@ export default function Ledger({
                     <LedgerTable
                       rows={g.rows}
                       catName={catName}
+                      acctName={acctName}
+                      showAccount={isAll}
                       isAdmin={teacher.is_admin}
                       onDelete={onDelete}
                     />
@@ -318,7 +337,7 @@ export default function Ledger({
           accounts={accounts.filter((a) => a.active)}
           categories={categories.filter((c) => c.active)}
           balances={balances}
-          defaultAccountId={acctId}
+          defaultAccountId={isAll ? defaultAcct : acctId}
           onClose={() => setModal(null)}
           onSaved={async () => {
             setModal(null);
@@ -331,7 +350,7 @@ export default function Ledger({
           teacher={teacher}
           accounts={accounts.filter((a) => a.active)}
           balances={balances}
-          defaultFromId={acctId}
+          defaultFromId={isAll ? defaultAcct : acctId}
           onClose={() => setModal(null)}
           onSaved={async () => {
             setModal(null);
@@ -351,11 +370,15 @@ function shortDate(iso: string) {
 const LedgerTable = memo(function LedgerTable({
   rows,
   catName,
+  acctName,
+  showAccount,
   isAdmin,
   onDelete,
 }: {
   rows: Row[];
   catName: Map<string, string>;
+  acctName: Map<string, string>;
+  showAccount: boolean;
   isAdmin: boolean;
   onDelete: (id: string) => void;
 }) {
@@ -409,6 +432,11 @@ const LedgerTable = memo(function LedgerTable({
                     </span>
                   )}
                 </div>
+                {showAccount && (
+                  <div className="truncate text-[11px] text-navy/50">
+                    {acctName.get(r.account_id) ?? "—"}
+                  </div>
+                )}
               </div>
               <div className="shrink-0 text-right">
                 <div
@@ -473,6 +501,11 @@ const LedgerTable = memo(function LedgerTable({
                   {tag && (
                     <span className="ml-1.5 rounded-full bg-black/5 px-1.5 py-0.5 text-[10px] text-black/45">
                       {tag}
+                    </span>
+                  )}
+                  {showAccount && (
+                    <span className="ml-1.5 rounded-full bg-navy/5 px-1.5 py-0.5 text-[10px] text-navy/55">
+                      {acctName.get(r.account_id) ?? "—"}
                     </span>
                   )}
                 </td>
