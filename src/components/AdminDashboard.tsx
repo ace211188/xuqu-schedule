@@ -48,11 +48,13 @@ export default function AdminDashboard({
   onSignOut,
   onSwitchModule,
   onOpenMySchedule,
+  onOpenStudents,
 }: {
   teacher: Teacher;
   onSignOut: () => void;
   onSwitchModule?: () => void;
   onOpenMySchedule?: () => void;
+  onOpenStudents?: () => void;
 }) {
   const months = useMemo(() => monthOptions(new Date(), 4), []);
   const [month, setMonth] = useState(months[1]?.value ?? months[0].value);
@@ -172,6 +174,14 @@ export default function AdminDashboard({
               className="rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/60 transition hover:border-black/40"
             >
               💰 記帳
+            </button>
+          )}
+          {onOpenStudents && (
+            <button
+              onClick={onOpenStudents}
+              className="rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/60 transition hover:border-black/40"
+            >
+              🎓 學生資料
             </button>
           )}
           <button

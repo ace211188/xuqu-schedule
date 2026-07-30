@@ -33,11 +33,13 @@ export default function AccountingApp({
   onSignOut,
   onSwitchModule,
   onOpenMySchedule,
+  onOpenStudents,
 }: {
   teacher: Teacher;
   onSignOut: () => void;
   onSwitchModule?: () => void;
   onOpenMySchedule?: () => void;
+  onOpenStudents?: () => void;
 }) {
   const [tab, setTab] = useState<AccountingTab>("dashboard");
   const data = useAccountingData(teacher.is_admin);
@@ -90,6 +92,14 @@ export default function AccountingApp({
               className="rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/60 transition hover:border-black/40"
             >
               🗓️ 我的排課
+            </button>
+          )}
+          {onOpenStudents && (
+            <button
+              onClick={onOpenStudents}
+              className="rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/60 transition hover:border-black/40"
+            >
+              🎓 學生資料
             </button>
           )}
           <button

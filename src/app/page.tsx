@@ -7,9 +7,10 @@ import Login from "@/components/Login";
 import ScheduleApp from "@/components/ScheduleApp";
 import AdminDashboard from "@/components/AdminDashboard";
 import AccountingApp from "@/components/accounting/AccountingApp";
+import StudentsApp from "@/components/students/StudentsApp";
 
-// admin=排課後台（管理全部老師）；me=我的排課（自己填）；accounting=記帳
-type View = "admin" | "me" | "accounting";
+// admin=排課後台（管理全部老師）；me=我的排課（自己填）；accounting=記帳；students=學生資料
+type View = "admin" | "me" | "accounting" | "students";
 
 export default function Page() {
   const { loading, session, teacher, signInWithName, signOut } = useAuth();
@@ -37,6 +38,7 @@ export default function Page() {
 
   const isAdmin = teacher.is_admin;
   const hasAccounting = isAdmin || teacher.can_accounting;
+  const hasStudents = isAdmin || teacher.can_students;
   // 預設畫面：宇群(管理員＋記帳)→直接進記帳；純排課管理員→排課後台；一般老師→我的排課
   const defaultView: View = isAdmin
     ? teacher.can_accounting
@@ -46,6 +48,20 @@ export default function Page() {
   const current: View = view ?? defaultView;
 
   const toAccounting = hasAccounting ? () => setView("accounting") : undefined;
+  const toStudents = hasStudents ? () => setView("students") : undefined;
+
+  // 學生資料（宇群/奕寬/美君）
+  if (current === "students" && hasStudents) {
+    return (
+      <StudentsApp
+        teacher={teacher}
+        onSignOut={signOut}
+        onSwitchModule={() => setView(isAdmin ? "admin" : "me")}
+        onOpenAccounting={toAccounting}
+        onOpenMySchedule={isAdmin ? () => setView("me") : undefined}
+      />
+    );
+  }
 
   if (current === "accounting" && hasAccounting) {
     return (
@@ -54,6 +70,7 @@ export default function Page() {
         onSignOut={signOut}
         onSwitchModule={() => setView(isAdmin ? "admin" : "me")}
         onOpenMySchedule={isAdmin ? () => setView("me") : undefined}
+        onOpenStudents={toStudents}
       />
     );
   }
@@ -66,6 +83,7 @@ export default function Page() {
         onSignOut={signOut}
         onSwitchModule={toAccounting}
         onOpenMySchedule={() => setView("me")}
+        onOpenStudents={toStudents}
       />
     );
   }
@@ -77,6 +95,7 @@ export default function Page() {
       onSignOut={signOut}
       onSwitchModule={toAccounting}
       onOpenAdmin={isAdmin ? () => setView("admin") : undefined}
+      onOpenStudents={toStudents}
     />
   );
 }

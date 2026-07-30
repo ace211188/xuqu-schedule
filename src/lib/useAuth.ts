@@ -9,6 +9,7 @@ export type Teacher = {
   name: string;
   is_admin: boolean;
   can_accounting: boolean;
+  can_students: boolean;
 };
 
 const EMAIL_DOMAIN = "xuqu.tw";
@@ -21,7 +22,7 @@ export function useAuth() {
   const loadTeacher = useCallback(async (uid: string) => {
     const { data } = await supabase
       .from("teachers")
-      .select("id,name,is_admin,can_accounting")
+      .select("id,name,is_admin,can_accounting,can_students")
       .eq("id", uid)
       .single();
     setTeacher(data ?? null);
