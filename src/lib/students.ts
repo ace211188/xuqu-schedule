@@ -46,17 +46,29 @@ export function nextStatus(s: StudentStatus): StudentStatus | null {
   return STATUS_CHAIN[i + 1];
 }
 
-// ── 課程種類（沿用排課慣例的 7 種，前端下拉） ──────────
+// ── 課程種類（前端下拉）──────────
+// 「兒音」＝「學齡前律動」，統一用學齡前律動
 export const COURSE_TYPES = [
   "一對一樂器",
   "一對一樂理",
   "雙軌團班",
   "雙軌精緻班",
   "學齡前律動",
-  "兒音",
   "音樂遊戲探索",
 ] as const;
 export type CourseType = (typeof COURSE_TYPES)[number];
+
+// 新增收費紀錄時的「方案」選項（下拉；仍可留白）
+export const PLAN_OPTIONS = [
+  "一對一樂器",
+  "一對一樂理",
+  "雙軌團班",
+  "雙軌精緻班",
+  "學齡前律動",
+  "音樂遊戲探索",
+  "個別一期",
+  "團班",
+] as const;
 
 // ── 來源 ─────────────────────────────────────────────
 export const SOURCES = [

@@ -155,10 +155,12 @@ export function Modal({
   title,
   onClose,
   children,
+  wide = false,
 }: {
   title: string;
   onClose: () => void;
   children: React.ReactNode;
+  wide?: boolean;
 }) {
   // 掛到 <body>（用 portal），避開帶 transform 動畫的祖先讓 fixed 失效的問題
   const [mounted, setMounted] = useState(false);
@@ -186,7 +188,9 @@ export function Modal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="acc-sheet flex max-h-[88dvh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-3xl"
+        className={`acc-sheet flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-3xl ${
+          wide ? "max-w-3xl" : "max-w-md"
+        }`}
       >
         <div className="flex shrink-0 items-center justify-between px-5 pb-3 pt-5">
           <h3 className="text-base font-bold text-navy">{title}</h3>

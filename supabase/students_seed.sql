@@ -160,3 +160,12 @@ select id, current_date, '雙軌', 12000, NULL, '首次匯入'
 -- 介紹人連結（舊生介紹）
 update public.students set referrer_student_id = (select id from public.students where name = '李晨希' limit 1)
   where name = '李依瑾';
+
+-- 依樂器自動掛課程種類（兒音/幼幼班＝學齡前律動；多科＝雙軌團班；單樂理＝一對一樂理；其餘單科＝一對一樂器）
+update public.students set course_type = case
+  when instrument like '%兒音%' or instrument like '%幼幼%' then '學齡前律動'
+  when instrument like '%,%' or instrument like '%團班%' then '雙軌團班'
+  when instrument = '樂理' then '一對一樂理'
+  else '一對一樂器'
+end
+where course_type is null and instrument is not null;
