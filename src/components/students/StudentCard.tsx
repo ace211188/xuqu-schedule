@@ -7,6 +7,7 @@ import {
   COLLECTORS,
   CONTACTS,
   COURSE_TYPES,
+  FEE_CYCLES,
   PLAN_OPTIONS,
   REFERRAL_HINT,
   SOURCES,
@@ -23,6 +24,8 @@ import {
   nextStatus,
   todayISO,
   updateStudent,
+  upsertClassCost,
+  type ClassCost,
   type Student,
   type StudentFeeRecord,
   type StudentInput,
@@ -62,6 +65,9 @@ function blankForm(): StudentInput {
     teacher: null,
     course_type: null,
     current_plan: null,
+    fee_amount: null,
+    fee_cycle: "雙月",
+    instrument_rate: null,
     deposit_amount: null,
     deposit_note: null,
     discount_note: null,
@@ -128,6 +134,8 @@ export default function StudentCard({
   student,
   feeRecords,
   allStudents,
+  classCosts,
+  classSize,
   onClose,
   onSaved,
 }: {
@@ -135,6 +143,8 @@ export default function StudentCard({
   student: Student | null; // null＝新增
   feeRecords: StudentFeeRecord[];
   allStudents: Student[];
+  classCosts: ClassCost[];
+  classSize: Map<string, number>;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -151,6 +161,19 @@ export default function StudentCard({
   function set<K extends keyof StudentInput>(key: K, value: StudentInput[K]) {
     setForm((f) => ({ ...f, [key]: value }));
   }
+
+  // 團班：同班別 ≥2 人時，顯示「班別每堂老師成本（整班共用）」欄
+  const slot = (form.class_slot ?? "").trim();
+  const classHeadcount = slot ? classSize.get(slot) ?? 1 : 1;
+  const isGroupClass = !!slot && classHeadcount >= 2;
+  const storedGroupCost = useMemo(
+    () => classCosts.find((c) => c.class_slot === slot)?.session_cost ?? null,
+    [classCosts, slot]
+  );
+  // null＝沿用已存值；使用者編輯後才變成字串
+  const [groupCostDraft, setGroupCostDraft] = useState<string | null>(null);
+  const groupCostValue =
+    groupCostDraft ?? (storedGroupCost != null ? String(storedGroupCost) : "");
 
   const referrerOptions = useMemo(
     () =>
@@ -178,22 +201,33 @@ export default function StudentCard({
     }
     setSaving(true);
     setErr(null);
+    const numOrNull = (n: number | null) =>
+      n === null || Number.isNaN(n) ? null : n;
     const clean: StudentInput = {
       ...form,
       name: form.name.trim(),
-      deposit_amount:
-        form.deposit_amount === null || Number.isNaN(form.deposit_amount)
-          ? null
-          : form.deposit_amount,
+      deposit_amount: numOrNull(form.deposit_amount),
+      fee_amount: numOrNull(form.fee_amount),
+      instrument_rate: numOrNull(form.instrument_rate),
     };
     const res = isNew
       ? (await createStudent(clean)).error
       : (await updateStudent(student!.id, clean)).error;
-    setSaving(false);
     if (res) {
+      setSaving(false);
       setErr(res);
       return;
     }
+    // 團班每堂成本（整班共用）：使用者有改才寫入
+    if (isGroupClass && groupCostDraft !== null) {
+      const cc = await upsertClassCost(slot, Number(groupCostValue) || 0);
+      if (cc.error) {
+        setSaving(false);
+        setErr(cc.error);
+        return;
+      }
+    }
+    setSaving(false);
     onSaved();
     if (isNew) onClose();
     else setEditing(false); // 存完回到唯讀檢視
@@ -275,9 +309,18 @@ export default function StudentCard({
             set={set}
             isNew={isNew}
             referrerOptions={referrerOptions}
+            isGroupClass={isGroupClass}
+            classHeadcount={classHeadcount}
+            groupCostValue={groupCostValue}
+            onGroupCost={setGroupCostDraft}
           />
         ) : (
-          <ViewBody form={form} referrerName={referrerName} />
+          <ViewBody
+            form={form}
+            referrerName={referrerName}
+            isGroupClass={isGroupClass}
+            groupCostValue={groupCostValue}
+          />
         )}
 
         {!isNew && (
@@ -320,9 +363,13 @@ export default function StudentCard({
 function ViewBody({
   form,
   referrerName,
+  isGroupClass,
+  groupCostValue,
 }: {
   form: StudentInput;
   referrerName: string | null;
+  isGroupClass: boolean;
+  groupCostValue: string;
 }) {
   return (
     <div className="space-y-3">
@@ -355,6 +402,28 @@ function ViewBody({
           }
         />
         <ViewRow label="優惠備註" value={form.discount_note} />
+      </div>
+
+      <SectionHead>成本／毛利用</SectionHead>
+      <div className="grid gap-x-6 sm:grid-cols-2">
+        <ViewRow
+          label="每期學費"
+          value={
+            form.fee_amount != null
+              ? `${fmtMoney(form.fee_amount)}（${form.fee_cycle ?? "雙月"}）`
+              : null
+          }
+        />
+        <ViewRow
+          label="個別鐘點"
+          value={form.instrument_rate != null ? `${fmtMoney(form.instrument_rate)}/堂` : null}
+        />
+        {isGroupClass && (
+          <ViewRow
+            label="團班每堂"
+            value={groupCostValue ? `${fmtMoney(Number(groupCostValue))}/堂（整班）` : null}
+          />
+        )}
       </div>
 
       <SectionHead>一、基本資料</SectionHead>
@@ -398,12 +467,21 @@ function EditBody({
   set,
   isNew,
   referrerOptions,
+  isGroupClass,
+  classHeadcount,
+  groupCostValue,
+  onGroupCost,
 }: {
   form: StudentInput;
   set: <K extends keyof StudentInput>(key: K, value: StudentInput[K]) => void;
   isNew: boolean;
   referrerOptions: { value: string; label: string }[];
+  isGroupClass: boolean;
+  classHeadcount: number;
+  groupCostValue: string;
+  onGroupCost: (v: string) => void;
 }) {
+  const numField = (v: number | null) => (v == null ? "" : String(v));
   return (
     <div className="space-y-4">
       {/* 三、招生與課程（順序：課程種類→期別→科目→老師） */}
@@ -476,6 +554,70 @@ function EditBody({
           placeholder="例：雙軌 8堂 $6400"
         />
       </Field>
+
+      {/* 成本／毛利用（每期學費、週期、個別鐘點、團班每堂） */}
+      <div className="rounded-xl border border-[#8CA07C]/40 bg-[#8CA07C]/[0.05] p-3">
+        <div className="mb-2 text-xs font-bold text-[#5f7a4f]">
+          📊 成本／毛利用（管理員的毛利計算會用到）
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="每期學費" hint="(這期實收，用來算月營收)">
+            <input
+              className={inputCls}
+              inputMode="numeric"
+              value={numField(form.fee_amount)}
+              onChange={(e) =>
+                set(
+                  "fee_amount",
+                  e.target.value === "" ? null : Number(e.target.value)
+                )
+              }
+              placeholder="例：6400"
+            />
+          </Field>
+          <Field label="繳費週期" hint="(雙月÷2 / 年繳÷12)">
+            <Select
+              value={form.fee_cycle ?? "雙月"}
+              onChange={(v) => set("fee_cycle", v)}
+              options={FEE_CYCLES.map((c) => ({ value: c, label: c }))}
+            />
+          </Field>
+        </div>
+        <Field
+          label="個別每堂鐘點"
+          hint="(這位學生個別課給老師的每堂；精緻班可含樂理)"
+        >
+          <input
+            className={inputCls}
+            inputMode="numeric"
+            value={numField(form.instrument_rate)}
+            onChange={(e) =>
+              set(
+                "instrument_rate",
+                e.target.value === "" ? null : Number(e.target.value)
+              )
+            }
+            placeholder="例：450"
+          />
+        </Field>
+        {isGroupClass && (
+          <Field
+            label={`團班每堂老師成本（${form.class_slot} 整班共用，${classHeadcount} 人）`}
+            hint="(同一班只需填一次，例：850)"
+          >
+            <input
+              className={inputCls}
+              inputMode="numeric"
+              value={groupCostValue}
+              onChange={(e) => onGroupCost(e.target.value)}
+              placeholder="例：850"
+            />
+          </Field>
+        )}
+        <p className="mt-1 text-[11px] text-black/40">
+          月營收 = 每期學費 ÷ 週期；月成本 = 個別鐘點×4（每月4堂）＋團班每堂×4。
+        </p>
+      </div>
 
       {/* 狀態 */}
       <Field label="狀態" hint={isNew ? "" : "(可切換暫停/畢業/流失/復課)"}>

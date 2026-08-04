@@ -1,26 +1,32 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Teacher } from "@/lib/useAuth";
 import {
   ALL_STATUS,
   COURSE_TYPES,
   STATUS_TONE,
+  displayCourseType,
   fmtMoney,
   groupByFamily,
+  isDualTrack,
   latestFee,
   type Student,
   type StudentStatus,
 } from "@/lib/students";
-import { computeProfit, currentMonth, type ProfitResult } from "@/lib/profit";
+import {
+  computeProfit,
+  fetchFixedOverhead,
+  type ProfitResult,
+} from "@/lib/profit";
 import { useStudentsData } from "./useStudentsData";
 import StudentCard from "./StudentCard";
-import ProfitPanel, { useProfitData } from "./ProfitPanel";
+import ProfitPanel from "./ProfitPanel";
 
 type FeeRecords = ReturnType<typeof useStudentsData>["feeRecords"];
-type PerStudent = ProfitResult["perStudent"] | null;
+// 班別 → 人數（判斷雙軌團/精用）
+type ClassSize = Map<string, number>;
 
-// 六種檢視
 type View = "list" | "course" | "family" | "teacher" | "enrolled" | "class";
 const VIEWS: { key: View; label: string }[] = [
   { key: "list", label: "☰ 一般列表" },
@@ -31,15 +37,30 @@ const VIEWS: { key: View; label: string }[] = [
   { key: "class", label: "🏷️ 依班別" },
 ];
 
-// 入校年份（保留原填法，盡量解析出西元/民國年）
-function enrolledYear(s: Student): string {
+// 老師欄可能是「宇群, 美君」→ 拆成個別老師
+function splitTeachers(t: string | null): string[] {
+  const raw = (t ?? "").trim();
+  if (!raw) return ["（未指定老師）"];
+  return raw
+    .split(/[,、，\/\s]+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+// 入校年月（民國→西元；到月）。回傳 { label, sort }：sort 用 YYYY-MM 便於排序
+function enrolledYM(s: Student): { label: string; sort: string } {
   const raw = (s.enrolled_on ?? "").trim();
-  if (!raw) return "（未填入校時間）";
-  const m = raw.match(/(\d{2,4})/);
-  if (!m) return raw;
+  if (!raw) return { label: "（未填入校時間）", sort: "0000-00" };
+  const m = raw.match(/(\d{2,4})(?:\D+(\d{1,2}))?/);
+  if (!m) return { label: raw, sort: "0000-01" };
   let y = Number(m[1]);
   if (y < 1911) y += 1911; // 民國→西元
-  return `${y} 年入校`;
+  if (!m[2]) return { label: `${y} 年（月份未填）`, sort: `${y}-00` };
+  const mo = Number(m[2]);
+  return {
+    label: `${y} 年 ${mo} 月入校`,
+    sort: `${y}-${String(mo).padStart(2, "0")}`,
+  };
 }
 
 export default function StudentsApp({
@@ -64,34 +85,61 @@ export default function StudentsApp({
   const [view, setView] = useState<View>("list");
   const [editing, setEditing] = useState<{ id: string | null } | null>(null);
 
+  // 班別人數表（雙軌團/精判斷用）
+  const classSize: ClassSize = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of data.students) {
+      const slot = (s.class_slot ?? "").trim();
+      if (!slot) continue;
+      m.set(slot, (m.get(slot) ?? 0) + 1);
+    }
+    return m;
+  }, [data.students]);
+  const sizeOf = useCallback(
+    (s: Student) => {
+      const slot = (s.class_slot ?? "").trim();
+      return slot ? classSize.get(slot) ?? 1 : 1;
+    },
+    [classSize]
+  );
+
   // 毛利（僅管理員）
-  const [month, setMonth] = useState(currentMonth());
-  const pd = useProfitData(month, isAdmin);
+  const [overhead, setOverhead] = useState(80000);
+  useEffect(() => {
+    if (isAdmin) fetchFixedOverhead().then(setOverhead);
+  }, [isAdmin]);
   const profit = useMemo<ProfitResult | null>(() => {
     if (!isAdmin) return null;
     return computeProfit({
-      month,
       students: data.students,
-      feeRecords: data.feeRecords,
-      costs: pd.costs,
-      hours: pd.hours,
-      fixedOverhead: pd.overhead,
+      classCosts: data.classCosts,
+      fixedOverhead: overhead,
     });
-  }, [isAdmin, month, data.students, data.feeRecords, pd.costs, pd.hours, pd.overhead]);
-  const perStudent: PerStudent = profit?.perStudent ?? null;
+  }, [isAdmin, data.students, data.classCosts, overhead]);
+  const refreshProfit = useCallback(async () => {
+    setOverhead(await fetchFixedOverhead());
+    await data.refresh();
+  }, [data]);
 
   const teacherOptions = useMemo(() => {
     const set = new Set<string>();
-    for (const s of data.students) if (s.teacher) set.add(s.teacher);
+    for (const s of data.students)
+      for (const t of splitTeachers(s.teacher))
+        if (t !== "（未指定老師）") set.add(t);
     return Array.from(set).sort();
   }, [data.students]);
 
   const filtered = useMemo(() => {
     const kw = q.trim().toLowerCase();
     return data.students.filter((s) => {
-      if (fCourse && s.course_type !== fCourse) return false;
+      if (fCourse) {
+        // 雙軌(T) 篩選＝所有雙軌學生；其餘照課程種類精確比對
+        if (isDualTrack(fCourse)) {
+          if (!isDualTrack(s.course_type)) return false;
+        } else if (s.course_type !== fCourse) return false;
+      }
       if (fStatus && s.status !== fStatus) return false;
-      if (fTeacher && s.teacher !== fTeacher) return false;
+      if (fTeacher && !splitTeachers(s.teacher).includes(fTeacher)) return false;
       if (kw) {
         const hay = [
           s.name,
@@ -159,15 +207,9 @@ export default function StudentsApp({
         </div>
       </header>
 
-      {/* 毛利面板（僅管理員） */}
+      {/* 毛利面板（僅管理員，可收合） */}
       {isAdmin && profit && (
-        <ProfitPanel
-          profit={profit}
-          month={month}
-          onMonthChange={setMonth}
-          students={data.students}
-          onRefresh={pd.refresh}
-        />
+        <ProfitPanel profit={profit} onRefresh={refreshProfit} />
       )}
 
       {/* 搜尋 + 新增 */}
@@ -239,21 +281,28 @@ export default function StudentsApp({
         <FlatView
           students={filtered}
           feeRecords={data.feeRecords}
-          perStudent={perStudent}
+          sizeOf={sizeOf}
           onOpen={(id) => setEditing({ id })}
         />
       ) : view === "family" ? (
         <FamilyView
           students={filtered}
           feeRecords={data.feeRecords}
-          perStudent={perStudent}
+          sizeOf={sizeOf}
+          onOpen={(id) => setEditing({ id })}
+        />
+      ) : view === "teacher" ? (
+        <TeacherView
+          students={filtered}
+          feeRecords={data.feeRecords}
+          sizeOf={sizeOf}
           onOpen={(id) => setEditing({ id })}
         />
       ) : (
         <GroupedView
           students={filtered}
           feeRecords={data.feeRecords}
-          perStudent={perStudent}
+          sizeOf={sizeOf}
           onOpen={(id) => setEditing({ id })}
           view={view}
         />
@@ -269,6 +318,8 @@ export default function StudentsApp({
           student={editingStudent}
           feeRecords={data.feeRecords}
           allStudents={data.students}
+          classCosts={data.classCosts}
+          classSize={classSize}
           onClose={() => setEditing(null)}
           onSaved={data.refresh}
         />
@@ -277,16 +328,16 @@ export default function StudentsApp({
   );
 }
 
-// ── 一般列表（不分組，依姓名） ───────────────────────
+// ── 一般列表 ─────────────────────────────────────────
 function FlatView({
   students,
   feeRecords,
-  perStudent,
+  sizeOf,
   onOpen,
 }: {
   students: Student[];
   feeRecords: FeeRecords;
-  perStudent: PerStudent;
+  sizeOf: (s: Student) => number;
   onOpen: (id: string) => void;
 }) {
   const sorted = useMemo(
@@ -300,7 +351,7 @@ function FlatView({
           key={s.id}
           student={s}
           feeRecords={feeRecords}
-          perStudent={perStudent}
+          sizeOf={sizeOf}
           onOpen={onOpen}
         />
       ))}
@@ -308,84 +359,136 @@ function FlatView({
   );
 }
 
-// ── 通用分組檢視（課程 / 老師 / 入校時間 / 班別） ──────
-function GroupedView({
+// ── 依老師（多位老師的學生會在每位老師底下各出現一次）──
+function TeacherView({
   students,
   feeRecords,
-  perStudent,
+  sizeOf,
   onOpen,
-  view,
 }: {
   students: Student[];
   feeRecords: FeeRecords;
-  perStudent: PerStudent;
+  sizeOf: (s: Student) => number;
   onOpen: (id: string) => void;
-  view: Exclude<View, "list" | "family">;
 }) {
   const groups = useMemo(() => {
-    const keyOf = (s: Student): string => {
-      if (view === "course") return s.course_type?.trim() || "（未分類）";
-      if (view === "teacher") return s.teacher?.trim() || "（未指定老師）";
-      if (view === "enrolled") return enrolledYear(s);
-      return s.class_slot?.trim() || "（未填班別）"; // class
-    };
     const map = new Map<string, Student[]>();
     for (const s of students) {
-      const k = keyOf(s);
-      const arr = map.get(k) ?? [];
-      arr.push(s);
-      map.set(k, arr);
+      for (const t of splitTeachers(s.teacher)) {
+        const arr = map.get(t) ?? [];
+        arr.push(s);
+        map.set(t, arr);
+      }
     }
-    const entries = Array.from(map.entries());
-    // 排序：課程照固定順序；其餘照分組名（入校時間新→舊）
-    if (view === "course") {
-      const order = [...(COURSE_TYPES as unknown as string[]), "（未分類）"];
-      entries.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]));
-    } else if (view === "enrolled") {
-      entries.sort((a, b) => b[0].localeCompare(a[0], "zh-Hant"));
-    } else {
-      entries.sort((a, b) => a[0].localeCompare(b[0], "zh-Hant"));
-    }
-    return entries;
-  }, [students, view]);
+    return Array.from(map.entries()).sort((a, b) =>
+      a[0].localeCompare(b[0], "zh-Hant")
+    );
+  }, [students]);
 
   return (
     <div className="space-y-5">
       {groups.map(([label, list]) => (
-        <section key={label}>
-          <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-navy">
-            {label}
-            <span className="rounded-full bg-black/5 px-2 py-0.5 text-xs font-normal text-black/45">
-              {list.length}
-            </span>
-          </h2>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {list.map((s) => (
-              <StudentRow
-                key={s.id}
-                student={s}
-                feeRecords={feeRecords}
-                perStudent={perStudent}
-                onOpen={onOpen}
-              />
-            ))}
-          </div>
-        </section>
+        <Section key={label} label={`${label}老師`} count={list.length}>
+          {list.map((s) => (
+            <StudentRow
+              key={label + s.id}
+              student={s}
+              feeRecords={feeRecords}
+              sizeOf={sizeOf}
+              onOpen={onOpen}
+            />
+          ))}
+        </Section>
       ))}
     </div>
   );
 }
 
-// ── 依家庭分組（家庭標籤＝學生名字） ─────────────────
+// ── 通用分組（課程 / 入校時間 / 班別）──
+function GroupedView({
+  students,
+  feeRecords,
+  sizeOf,
+  onOpen,
+  view,
+}: {
+  students: Student[];
+  feeRecords: FeeRecords;
+  sizeOf: (s: Student) => number;
+  onOpen: (id: string) => void;
+  view: "course" | "enrolled" | "class";
+}) {
+  const groups = useMemo(() => {
+    // key＝分組值；每組記 label 與 sort
+    const map = new Map<string, { label: string; sort: string; list: Student[] }>();
+    for (const s of students) {
+      let key: string;
+      let label: string;
+      let sort: string;
+      if (view === "course") {
+        key = label = displayCourseType(s, sizeOf(s));
+        sort = key;
+      } else if (view === "enrolled") {
+        const ym = enrolledYM(s);
+        key = label = ym.label;
+        sort = ym.sort;
+      } else {
+        key = label = s.class_slot?.trim() || "（未填班別）";
+        sort = key;
+      }
+      const g = map.get(key) ?? { label, sort, list: [] };
+      g.list.push(s);
+      map.set(key, g);
+    }
+    const entries = Array.from(map.values());
+    if (view === "course") {
+      const order = [
+        "一對一樂器",
+        "一對一樂理",
+        "T團班",
+        "T精緻班",
+        "學齡前律動",
+        "音樂遊戲探索",
+        "（未分類）",
+      ];
+      entries.sort((a, b) => order.indexOf(a.label) - order.indexOf(b.label));
+    } else if (view === "enrolled") {
+      entries.sort((a, b) => b.sort.localeCompare(a.sort)); // 新→舊
+    } else {
+      entries.sort((a, b) => a.sort.localeCompare(b.sort, "zh-Hant"));
+    }
+    return entries;
+  }, [students, view, sizeOf]);
+
+  return (
+    <div className="space-y-5">
+      {groups.map((g) => (
+        <Section key={g.label} label={g.label} count={g.list.length}>
+          {g.list.map((s) => (
+            <StudentRow
+              key={s.id}
+              student={s}
+              feeRecords={feeRecords}
+              sizeOf={sizeOf}
+              onOpen={onOpen}
+            />
+          ))}
+        </Section>
+      ))}
+    </div>
+  );
+}
+
+// ── 依家庭（家庭標籤＝學生名字）──
 function FamilyView({
   students,
   feeRecords,
-  perStudent,
+  sizeOf,
   onOpen,
 }: {
   students: Student[];
   feeRecords: FeeRecords;
-  perStudent: PerStudent;
+  sizeOf: (s: Student) => number;
   onOpen: (id: string) => void;
 }) {
   const groups = useMemo(() => groupByFamily(students), [students]);
@@ -414,7 +517,7 @@ function FamilyView({
                 key={s.id}
                 student={s}
                 feeRecords={feeRecords}
-                perStudent={perStudent}
+                sizeOf={sizeOf}
                 onOpen={onOpen}
               />
             ))}
@@ -425,20 +528,43 @@ function FamilyView({
   );
 }
 
-// ── 單張學生卡片（列表項） ───────────────────────────
+// 分組區塊外框
+function Section({
+  label,
+  count,
+  children,
+}: {
+  label: string;
+  count: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-navy">
+        {label}
+        <span className="rounded-full bg-black/5 px-2 py-0.5 text-xs font-normal text-black/45">
+          {count}
+        </span>
+      </h2>
+      <div className="grid gap-2 sm:grid-cols-2">{children}</div>
+    </section>
+  );
+}
+
+// ── 單張學生列 ───────────────────────────────────────
 function StudentRow({
   student: s,
   feeRecords,
-  perStudent,
+  sizeOf,
   onOpen,
 }: {
   student: Student;
   feeRecords: FeeRecords;
-  perStudent: PerStudent;
+  sizeOf: (s: Student) => number;
   onOpen: (id: string) => void;
 }) {
   const last = latestFee(feeRecords, s.id);
-  const p = perStudent?.get(s.id) ?? null;
+  const course = displayCourseType(s, sizeOf(s));
   return (
     <button
       onClick={() => onOpen(s.id)}
@@ -460,6 +586,11 @@ function StudentRow({
         </span>
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-black/50">
+        {s.course_type && (
+          <span className="rounded bg-navy/5 px-1.5 py-0.5 text-navy/70">
+            {course}
+          </span>
+        )}
         {s.instrument && <span>{s.instrument}</span>}
         {s.teacher && <span>· {s.teacher}老師</span>}
         {s.class_slot && <span>· {s.class_slot}</span>}
@@ -477,17 +608,6 @@ function StudentRow({
               上次 {fmtMoney(last.amount)}
             </span>
           )}
-        </div>
-      )}
-      {/* 本月毛利貢獻（僅管理員、且該生本月有收入時） */}
-      {p && p.revenue > 0 && (
-        <div className="mt-1.5 flex items-center gap-2 rounded-lg bg-black/[0.02] px-2 py-1 text-[11px]">
-          <span className="text-black/45">本月</span>
-          <span className="text-[#5f7a4f]">收 {fmtMoney(p.revenue)}</span>
-          <span className="text-brand">成本 {fmtMoney(p.cost)}</span>
-          <span className="ml-auto font-semibold text-navy">
-            毛利 {fmtMoney(p.gross)}
-          </span>
         </div>
       )}
       {s.discount_note && (

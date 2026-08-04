@@ -51,12 +51,34 @@ export function nextStatus(s: StudentStatus): StudentStatus | null {
 export const COURSE_TYPES = [
   "一對一樂器",
   "一對一樂理",
-  "雙軌團班",
-  "雙軌精緻班",
+  "雙軌(T)",
   "學齡前律動",
   "音樂遊戲探索",
 ] as const;
 export type CourseType = (typeof COURSE_TYPES)[number];
+
+// ── 繳費週期（毛利用）──
+// 月營收 = 每期學費 ÷ 週期月數（雙月=2、年繳=12、單堂=1）
+export const FEE_CYCLES = ["雙月", "年繳", "單堂"] as const;
+export type FeeCycle = (typeof FEE_CYCLES)[number];
+export function cycleMonths(cycle: string | null): number {
+  if (cycle === "年繳") return 12;
+  if (cycle === "單堂") return 1;
+  return 2; // 雙月（預設）
+}
+// 每月上課堂數（舊線慣例：一期兩個月共 8 堂 → 每月 4 堂）
+export const SESSIONS_PER_MONTH = 4;
+
+// 是否雙軌（T）：課程種類含「雙軌」或「T」
+export function isDualTrack(courseType: string | null): boolean {
+  const c = courseType ?? "";
+  return c.includes("雙軌") || c.includes("T");
+}
+// 顯示用課程種類：雙軌依班別人數自動判斷 T團班(≥2)/T精緻班(1)；其餘回原值
+export function displayCourseType(s: Student, classSize: number): string {
+  if (isDualTrack(s.course_type)) return classSize >= 2 ? "T團班" : "T精緻班";
+  return s.course_type ?? "（未分類）";
+}
 
 // 新增收費紀錄時的「方案」選項（下拉；仍可留白）
 export const PLAN_OPTIONS = [
@@ -118,6 +140,10 @@ export type Student = {
   teacher: string | null;
   course_type: string | null;
   current_plan: string | null;
+  // 毛利用：每期學費、繳費週期、個別每堂老師鐘點成本
+  fee_amount: number | null;
+  fee_cycle: string | null;
+  instrument_rate: number | null;
   deposit_amount: number | null;
   deposit_note: string | null;
   discount_note: string | null;
@@ -308,5 +334,28 @@ export async function deleteFeeRecord(id: string): Promise<Res> {
     .from("student_fee_records")
     .delete()
     .eq("id", id);
+  return { error: error?.message ?? null };
+}
+
+// ── 班別成本（團班/樂理每堂給老師的共用金額）──────────
+export type ClassCost = {
+  class_slot: string;
+  session_cost: number;
+};
+
+export async function fetchClassCosts(): Promise<ClassCost[]> {
+  const { data } = await supabase
+    .from("class_cost")
+    .select("class_slot,session_cost");
+  return (data ?? []) as ClassCost[];
+}
+
+export async function upsertClassCost(
+  classSlot: string,
+  sessionCost: number
+): Promise<Res> {
+  const { error } = await supabase
+    .from("class_cost")
+    .upsert({ class_slot: classSlot, session_cost: sessionCost });
   return { error: error?.message ?? null };
 }

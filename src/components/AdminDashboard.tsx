@@ -59,7 +59,8 @@ export default function AdminDashboard({
   onOpenStudents?: () => void;
 }) {
   const months = useMemo(() => monthOptions(new Date(), 4), []);
-  const [month, setMonth] = useState(months[1]?.value ?? months[0].value);
+  // 預設本月（monthOptions[0]＝當月）
+  const [month, setMonth] = useState(months[0].value);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<TeacherStat[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
