@@ -40,11 +40,28 @@ export async function enablePush(teacherId: string): Promise<EnableResult> {
     const perm = await Notification.requestPermission();
     if (perm !== "granted") return "denied";
     const reg = await navigator.serviceWorker.ready;
+    const appKey = urlB64ToUint8Array(VAPID_PUBLIC);
     let sub = await reg.pushManager.getSubscription();
+    // 換過 VAPID 金鑰時：既有訂閱是用舊公鑰訂的，發送端（新私鑰）推不到，
+    // 必須先退訂再用新公鑰重訂，否則永遠收不到。
+    if (sub) {
+      const existing = sub.options?.applicationServerKey;
+      const same =
+        existing &&
+        new Uint8Array(existing).toString() === appKey.toString();
+      if (!same) {
+        try {
+          await sub.unsubscribe();
+        } catch {
+          /* ignore */
+        }
+        sub = null;
+      }
+    }
     if (!sub) {
       sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlB64ToUint8Array(VAPID_PUBLIC),
+        applicationServerKey: appKey,
       });
     }
     const json = sub.toJSON();

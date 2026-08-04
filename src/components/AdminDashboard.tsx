@@ -16,6 +16,7 @@ import {
   type CellValue,
 } from "@/lib/schedule";
 import NotificationCenter from "./NotificationCenter";
+import { enablePush, pushSupported } from "@/lib/push";
 
 type TeacherStat = {
   id: string;
@@ -66,6 +67,11 @@ export default function AdminDashboard({
     { name: string; username: string; password: string }[]
   >([]);
   const [showCreds, setShowCreds] = useState(false);
+
+  // 管理員打開後台就請求通知權限並訂閱（含換金鑰後自動重訂），讓宇群收得到推播
+  useEffect(() => {
+    if (pushSupported()) enablePush(teacher.id);
+  }, [teacher.id]);
 
   useEffect(() => {
     supabase
