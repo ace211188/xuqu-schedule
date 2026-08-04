@@ -74,9 +74,9 @@ export function isDualTrack(courseType: string | null): boolean {
   const c = courseType ?? "";
   return c.includes("雙軌") || c.includes("T");
 }
-// 顯示用課程種類：雙軌依班別人數自動判斷 T團班(≥2)/T精緻班(1)；其餘回原值
+// 顯示用課程種類：雙軌依班別人數自動判斷 雙軌團班(≥2)/雙軌精緻班(1)；其餘回原值
 export function displayCourseType(s: Student, classSize: number): string {
-  if (isDualTrack(s.course_type)) return classSize >= 2 ? "T團班" : "T精緻班";
+  if (isDualTrack(s.course_type)) return classSize >= 2 ? "雙軌團班" : "雙軌精緻班";
   return s.course_type ?? "（未分類）";
 }
 

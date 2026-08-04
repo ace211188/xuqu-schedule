@@ -80,7 +80,10 @@ export function computeProfit(params: {
     if (revenue === 0 && cost === 0) continue; // 尚未填資料的班不顯示
     classes.push({
       key: g.key,
-      label: g.slot ? g.name : g.list[0]?.name ?? g.name,
+      // 班別欄：先列學生名（括號），再接班別代號；無班別者只顯示學生名
+      label: g.slot
+        ? `（${g.list.map((s) => s.name).join("・")}）${g.slot}`
+        : g.list[0]?.name ?? g.name,
       slot: g.slot,
       studentCount: g.list.length,
       revenue,
