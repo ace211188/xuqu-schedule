@@ -35,10 +35,10 @@ const label = `${y} 年 ${Number(m)} 月`;
 const { data: subs = [] } = await sb
   .from("push_subscriptions")
   .select("teacher_id,endpoint,subscription");
+// 收件對象：全部老師（含管理員宇群，讓宇群也收到月排課提醒）
 const { data: teachers = [] } = await sb
   .from("teachers")
-  .select("id,name,is_admin")
-  .eq("is_admin", false);
+  .select("id,name,is_admin");
 const teacherIds = new Set(teachers.map((t) => t.id));
 
 // 各老師這個月的備註
@@ -87,6 +87,20 @@ for (const s of subs) {
     }
   }
 }
+// 寫入通知紀錄（後台「通知中心」可查歷史）
+await sb.from("notification_log").insert({
+  kind: MODE === "test" ? "test" : "reminder",
+  title: MODE === "test" ? "測試通知 🎵" : "排課提醒 🎵",
+  body:
+    MODE === "test"
+      ? "這是一則測試推播，看得到就成功囉！"
+      : `${label}的排課請確認一下～沒有變動也請按「更新」確認 💛`,
+  target_ids: [...targets],
+  target_label: MODE === "test" ? "所有已訂閱者（測試）" : "全部老師",
+  sent_count: sent,
+  failed_count: failed,
+});
+
 console.log(
   `MODE=${MODE} month=${month} recipients=${targets.size} sent=${sent} removed=${removed} failed=${failed}`
 );

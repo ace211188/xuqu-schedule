@@ -28,6 +28,7 @@ import {
 } from "./ui";
 import { ReceiptInput, ReceiptLinks } from "./Receipts";
 import { RejectModal } from "./Reimbursements";
+import { notifyAccountingSubmit } from "@/lib/notify";
 
 const STATUS_ORDER: Record<Collection["status"], number> = {
   pending_confirm: 0,
@@ -345,6 +346,13 @@ function CollectionForm({
         changeGiven,
         changeAccountId,
       });
+      // 新收款送出 → 即時通知管理員（宇群）處理（best-effort，不擋流程）
+      if (!res.error) {
+        void notifyAccountingSubmit({
+          who: teacher.name,
+          what: `一筆收款「${description.trim()}」${fmtMoney(net)}`,
+        });
+      }
     } else {
       const patch: Parameters<typeof updateCollection>[1] = {
         amount: amountNum,

@@ -12,8 +12,35 @@ import {
   type Student,
   type StudentStatus,
 } from "@/lib/students";
+import { computeProfit, currentMonth, type ProfitResult } from "@/lib/profit";
 import { useStudentsData } from "./useStudentsData";
 import StudentCard from "./StudentCard";
+import ProfitPanel, { useProfitData } from "./ProfitPanel";
+
+type FeeRecords = ReturnType<typeof useStudentsData>["feeRecords"];
+type PerStudent = ProfitResult["perStudent"] | null;
+
+// 六種檢視
+type View = "list" | "course" | "family" | "teacher" | "enrolled" | "class";
+const VIEWS: { key: View; label: string }[] = [
+  { key: "list", label: "☰ 一般列表" },
+  { key: "course", label: "🎼 依課程" },
+  { key: "family", label: "👨‍👩‍👧 依家庭" },
+  { key: "teacher", label: "🧑‍🏫 依老師" },
+  { key: "enrolled", label: "📅 依入校時間" },
+  { key: "class", label: "🏷️ 依班別" },
+];
+
+// 入校年份（保留原填法，盡量解析出西元/民國年）
+function enrolledYear(s: Student): string {
+  const raw = (s.enrolled_on ?? "").trim();
+  if (!raw) return "（未填入校時間）";
+  const m = raw.match(/(\d{2,4})/);
+  if (!m) return raw;
+  let y = Number(m[1]);
+  if (y < 1911) y += 1911; // 民國→西元
+  return `${y} 年入校`;
+}
 
 export default function StudentsApp({
   teacher,
@@ -24,27 +51,41 @@ export default function StudentsApp({
 }: {
   teacher: Teacher;
   onSignOut: () => void;
-  onSwitchModule?: () => void; // 回排課後台 / 排課
-  onOpenAccounting?: () => void; // 去記帳
-  onOpenMySchedule?: () => void; // 我的排課
+  onSwitchModule?: () => void;
+  onOpenAccounting?: () => void;
+  onOpenMySchedule?: () => void;
 }) {
   const data = useStudentsData();
+  const isAdmin = teacher.is_admin;
   const [q, setQ] = useState("");
   const [fCourse, setFCourse] = useState<string>("");
   const [fStatus, setFStatus] = useState<string>("");
   const [fTeacher, setFTeacher] = useState<string>("");
-  const [byFamily, setByFamily] = useState(false);
-  // 開卡：{ mode:"new" } 或 { mode:"edit", id }
+  const [view, setView] = useState<View>("list");
   const [editing, setEditing] = useState<{ id: string | null } | null>(null);
 
-  // 老師篩選選項
+  // 毛利（僅管理員）
+  const [month, setMonth] = useState(currentMonth());
+  const pd = useProfitData(month, isAdmin);
+  const profit = useMemo<ProfitResult | null>(() => {
+    if (!isAdmin) return null;
+    return computeProfit({
+      month,
+      students: data.students,
+      feeRecords: data.feeRecords,
+      costs: pd.costs,
+      hours: pd.hours,
+      fixedOverhead: pd.overhead,
+    });
+  }, [isAdmin, month, data.students, data.feeRecords, pd.costs, pd.hours, pd.overhead]);
+  const perStudent: PerStudent = profit?.perStudent ?? null;
+
   const teacherOptions = useMemo(() => {
     const set = new Set<string>();
     for (const s of data.students) if (s.teacher) set.add(s.teacher);
     return Array.from(set).sort();
   }, [data.students]);
 
-  // 篩選 + 搜尋
   const filtered = useMemo(() => {
     const kw = q.trim().toLowerCase();
     return data.students.filter((s) => {
@@ -118,6 +159,17 @@ export default function StudentsApp({
         </div>
       </header>
 
+      {/* 毛利面板（僅管理員） */}
+      {isAdmin && profit && (
+        <ProfitPanel
+          profit={profit}
+          month={month}
+          onMonthChange={setMonth}
+          students={data.students}
+          onRefresh={pd.refresh}
+        />
+      )}
+
       {/* 搜尋 + 新增 */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <input
@@ -132,6 +184,23 @@ export default function StudentsApp({
         >
           ＋新增學生
         </button>
+      </div>
+
+      {/* 檢視切換（可橫向捲動） */}
+      <div className="mb-3 -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
+        {VIEWS.map((v) => (
+          <button
+            key={v.key}
+            onClick={() => setView(v.key)}
+            className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${
+              view === v.key
+                ? "bg-navy text-white"
+                : "border border-black/15 text-black/60 hover:border-black/40"
+            }`}
+          >
+            {v.label}
+          </button>
+        ))}
       </div>
 
       {/* 篩選列 */}
@@ -156,16 +225,6 @@ export default function StudentsApp({
             options={teacherOptions}
           />
         )}
-        <button
-          onClick={() => setByFamily((v) => !v)}
-          className={`ml-auto rounded-full px-3 py-1.5 text-xs font-medium transition ${
-            byFamily
-              ? "bg-navy text-white"
-              : "border border-black/15 text-black/60 hover:border-black/40"
-          }`}
-        >
-          {byFamily ? "👨‍👩‍👧 依家庭檢視" : "☰ 一般列表"}
-        </button>
       </div>
 
       {data.loading ? (
@@ -176,17 +235,27 @@ export default function StudentsApp({
             ? "還沒有學生。點右上「＋新增學生」開始。"
             : "沒有符合條件的學生。"}
         </div>
-      ) : byFamily ? (
+      ) : view === "list" ? (
+        <FlatView
+          students={filtered}
+          feeRecords={data.feeRecords}
+          perStudent={perStudent}
+          onOpen={(id) => setEditing({ id })}
+        />
+      ) : view === "family" ? (
         <FamilyView
           students={filtered}
           feeRecords={data.feeRecords}
+          perStudent={perStudent}
           onOpen={(id) => setEditing({ id })}
         />
       ) : (
-        <CourseView
+        <GroupedView
           students={filtered}
           feeRecords={data.feeRecords}
+          perStudent={perStudent}
           onOpen={(id) => setEditing({ id })}
+          view={view}
         />
       )}
 
@@ -208,37 +277,84 @@ export default function StudentsApp({
   );
 }
 
-// ── 依課程種類分組 ───────────────────────────────────
-function CourseView({
+// ── 一般列表（不分組，依姓名） ───────────────────────
+function FlatView({
   students,
   feeRecords,
+  perStudent,
   onOpen,
 }: {
   students: Student[];
-  feeRecords: ReturnType<typeof useStudentsData>["feeRecords"];
+  feeRecords: FeeRecords;
+  perStudent: PerStudent;
   onOpen: (id: string) => void;
 }) {
+  const sorted = useMemo(
+    () => [...students].sort((a, b) => a.name.localeCompare(b.name, "zh-Hant")),
+    [students]
+  );
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      {sorted.map((s) => (
+        <StudentRow
+          key={s.id}
+          student={s}
+          feeRecords={feeRecords}
+          perStudent={perStudent}
+          onOpen={onOpen}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ── 通用分組檢視（課程 / 老師 / 入校時間 / 班別） ──────
+function GroupedView({
+  students,
+  feeRecords,
+  perStudent,
+  onOpen,
+  view,
+}: {
+  students: Student[];
+  feeRecords: FeeRecords;
+  perStudent: PerStudent;
+  onOpen: (id: string) => void;
+  view: Exclude<View, "list" | "family">;
+}) {
   const groups = useMemo(() => {
+    const keyOf = (s: Student): string => {
+      if (view === "course") return s.course_type?.trim() || "（未分類）";
+      if (view === "teacher") return s.teacher?.trim() || "（未指定老師）";
+      if (view === "enrolled") return enrolledYear(s);
+      return s.class_slot?.trim() || "（未填班別）"; // class
+    };
     const map = new Map<string, Student[]>();
     for (const s of students) {
-      const k = s.course_type ?? "（未分類）";
+      const k = keyOf(s);
       const arr = map.get(k) ?? [];
       arr.push(s);
       map.set(k, arr);
     }
-    // 依 COURSE_TYPES 順序排；未分類殿後
-    const order = [...(COURSE_TYPES as unknown as string[]), "（未分類）"];
-    return Array.from(map.entries()).sort(
-      (a, b) => order.indexOf(a[0]) - order.indexOf(b[0])
-    );
-  }, [students]);
+    const entries = Array.from(map.entries());
+    // 排序：課程照固定順序；其餘照分組名（入校時間新→舊）
+    if (view === "course") {
+      const order = [...(COURSE_TYPES as unknown as string[]), "（未分類）"];
+      entries.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]));
+    } else if (view === "enrolled") {
+      entries.sort((a, b) => b[0].localeCompare(a[0], "zh-Hant"));
+    } else {
+      entries.sort((a, b) => a[0].localeCompare(b[0], "zh-Hant"));
+    }
+    return entries;
+  }, [students, view]);
 
   return (
     <div className="space-y-5">
-      {groups.map(([course, list]) => (
-        <section key={course}>
+      {groups.map(([label, list]) => (
+        <section key={label}>
           <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-navy">
-            {course}
+            {label}
             <span className="rounded-full bg-black/5 px-2 py-0.5 text-xs font-normal text-black/45">
               {list.length}
             </span>
@@ -249,6 +365,7 @@ function CourseView({
                 key={s.id}
                 student={s}
                 feeRecords={feeRecords}
+                perStudent={perStudent}
                 onOpen={onOpen}
               />
             ))}
@@ -259,14 +376,16 @@ function CourseView({
   );
 }
 
-// ── 依家庭分組 ───────────────────────────────────────
+// ── 依家庭分組（家庭標籤＝學生名字） ─────────────────
 function FamilyView({
   students,
   feeRecords,
+  perStudent,
   onOpen,
 }: {
   students: Student[];
-  feeRecords: ReturnType<typeof useStudentsData>["feeRecords"];
+  feeRecords: FeeRecords;
+  perStudent: PerStudent;
   onOpen: (id: string) => void;
 }) {
   const groups = useMemo(() => groupByFamily(students), [students]);
@@ -295,6 +414,7 @@ function FamilyView({
                 key={s.id}
                 student={s}
                 feeRecords={feeRecords}
+                perStudent={perStudent}
                 onOpen={onOpen}
               />
             ))}
@@ -309,13 +429,16 @@ function FamilyView({
 function StudentRow({
   student: s,
   feeRecords,
+  perStudent,
   onOpen,
 }: {
   student: Student;
-  feeRecords: ReturnType<typeof useStudentsData>["feeRecords"];
+  feeRecords: FeeRecords;
+  perStudent: PerStudent;
   onOpen: (id: string) => void;
 }) {
   const last = latestFee(feeRecords, s.id);
+  const p = perStudent?.get(s.id) ?? null;
   return (
     <button
       onClick={() => onOpen(s.id)}
@@ -356,6 +479,17 @@ function StudentRow({
           )}
         </div>
       )}
+      {/* 本月毛利貢獻（僅管理員、且該生本月有收入時） */}
+      {p && p.revenue > 0 && (
+        <div className="mt-1.5 flex items-center gap-2 rounded-lg bg-black/[0.02] px-2 py-1 text-[11px]">
+          <span className="text-black/45">本月</span>
+          <span className="text-[#5f7a4f]">收 {fmtMoney(p.revenue)}</span>
+          <span className="text-brand">成本 {fmtMoney(p.cost)}</span>
+          <span className="ml-auto font-semibold text-navy">
+            毛利 {fmtMoney(p.gross)}
+          </span>
+        </div>
+      )}
       {s.discount_note && (
         <p className="mt-1 truncate text-xs text-[#5f7a4f]">
           🎁 {s.discount_note}
@@ -365,7 +499,7 @@ function StudentRow({
   );
 }
 
-// ── 迷你篩選下拉（用原生 select，緊湊） ────────────────
+// ── 迷你篩選下拉 ─────────────────────────────────────
 function FilterSelect({
   value,
   onChange,

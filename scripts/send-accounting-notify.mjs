@@ -112,6 +112,23 @@ for (const [tid, payload] of payloadByTeacher) {
     }
   }
 }
+// 寫入通知紀錄（後台「通知中心」可查歷史）。各收件人內容可能不同，這裡記彙總。
+if (payloadByTeacher.size > 0) {
+  const sample = [...payloadByTeacher.values()][0];
+  await sb.from("notification_log").insert({
+    kind: MODE === "test" ? "test" : "acc_todo",
+    title: sample.title,
+    body:
+      payloadByTeacher.size > 1
+        ? `${sample.body}（共 ${payloadByTeacher.size} 位收件人，內容依待辦而異）`
+        : sample.body,
+    target_ids: [...payloadByTeacher.keys()],
+    target_label: MODE === "test" ? "所有已訂閱者（測試）" : "有待辦的成員/管理員",
+    sent_count: sent,
+    failed_count: failed,
+  });
+}
+
 console.log(
   `MODE=${MODE} recipients=${payloadByTeacher.size} sent=${sent} removed=${removed} failed=${failed}`
 );

@@ -205,8 +205,8 @@ export function groupByFamily(students: Student[]): [string, Student[]][] {
   const out: [string, Student[]][] = [];
   for (const [, arr] of map) {
     arr.sort((a, b) => a.created_at.localeCompare(b.created_at));
-    const g = primaryGuardian(arr[0]);
-    const label = g.name ? `${g.name} 家` : g.phone || "（未填家長）";
+    // 家庭標籤用「學生名字」而非家長（例：高睿辰・高維劭），依需求不以家長命名
+    const label = arr.map((s) => s.name).join("・");
     out.push([label, arr]);
   }
   // 單一（未歸群）的學生各自成一組

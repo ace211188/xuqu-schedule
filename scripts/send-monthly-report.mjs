@@ -113,6 +113,17 @@ for (const arr of subsByTeacher.values()) {
     }
   }
 }
+// 寫入通知紀錄（後台「通知中心」可查歷史）
+await sb.from("notification_log").insert({
+  kind: MODE === "test" ? "test" : "monthly",
+  title: payload.title,
+  body: payload.body,
+  target_ids: [...targetIds],
+  target_label: MODE === "test" ? "所有已訂閱者（測試）" : "管理員",
+  sent_count: sent,
+  failed_count: failed,
+});
+
 console.log(
   `MODE=${MODE} month=${key} income=${income} expense=${expense} net=${net} endBalance=${endBalance} sent=${sent} removed=${removed} failed=${failed}`
 );

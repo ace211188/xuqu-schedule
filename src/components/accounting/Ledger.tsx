@@ -32,6 +32,11 @@ import {
   inputCls,
 } from "./ui";
 import { CountMoney, useIsMobile } from "./anim";
+import {
+  createFeeRecord,
+  fetchStudents,
+  type Student,
+} from "@/lib/students";
 
 // 一次先畫這麼多列，其餘按「載入更多」再補（避免一次塞幾百個 DOM 節點）
 const PAGE = 80;
@@ -574,8 +579,55 @@ function EntryModal({
   const [savedFlash, setSavedFlash] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // ── 學費同步：類別＝學費時，要選學生，存檔同時在學生資料建一筆繳費 ──
+  const [students, setStudents] = useState<Student[]>([]);
+  const [studentId, setStudentId] = useState("");
+  const [studentSearch, setStudentSearch] = useState("");
+  const [skipStudent, setSkipStudent] = useState(false); // 查無此生時，手動略過同步
+
   const cats = categories.filter((c) => c.kind === kind);
   const amountNum = Number(amount);
+
+  // 目前選的類別是否為「學費」（收入面才觸發同步）
+  const isTuition = useMemo(() => {
+    if (kind !== "income") return false;
+    const c = categories.find((x) => x.id === categoryId);
+    return !!c && c.name.includes("學費");
+  }, [kind, categoryId, categories]);
+
+  // 進入學費模式才載入學生清單（只需一次）
+  useEffect(() => {
+    if (isTuition && students.length === 0) {
+      fetchStudents().then(setStudents);
+    }
+  }, [isTuition, students.length]);
+
+  const selectedStudent = students.find((s) => s.id === studentId) ?? null;
+
+  // 自動比對：從項目文字（例「薪睿學費」）猜學生；使用者尚未手選時才自動帶入
+  useEffect(() => {
+    if (!isTuition || studentId || students.length === 0) return;
+    const text = item.trim();
+    if (!text) return;
+    const hit = students.find((s) => {
+      const nm = s.name?.trim();
+      const nick = s.nickname?.trim();
+      return (nm && text.includes(nm)) || (nick && text.includes(nick));
+    });
+    if (hit) setStudentId(hit.id);
+  }, [item, isTuition, students, studentId]);
+
+  // 學生搜尋結果（依姓名／暱稱過濾）
+  const studentMatches = useMemo(() => {
+    const kw = studentSearch.trim();
+    const base = kw
+      ? students.filter(
+          (s) =>
+            (s.name ?? "").includes(kw) || (s.nickname ?? "").includes(kw)
+        )
+      : students;
+    return base.slice(0, 8);
+  }, [students, studentSearch]);
 
   // 存檔後該帳戶餘額會變成多少（金額沒填就先顯示目前餘額）
   const acctBalance =
@@ -595,6 +647,9 @@ function EntryModal({
     if (!accountId) return setErr("請選擇帳戶");
     if (!item.trim()) return setErr("請填寫項目");
     if (!amountNum || amountNum <= 0) return setErr("請填寫正確金額");
+    // 學費必須指定學生（查無此生可按「略過同步」）
+    if (isTuition && !studentId && !skipStudent)
+      return setErr("學費請選擇學生；查無此生可按「略過同步」只記帳");
     setBusy(true);
     const { error } = await createEntry({
       accountId,
@@ -604,12 +659,36 @@ function EntryModal({
       note: item.trim(),
       createdBy: teacher.id,
     });
+    if (error) {
+      setBusy(false);
+      return setErr(error);
+    }
+    // 學費且有選學生 → 同步在該生「繳費紀錄」建一筆（兩邊各自獨立，不連動刪除）
+    if (isTuition && studentId) {
+      const feeRes = await createFeeRecord({
+        studentId,
+        chargedOn: occurredOn,
+        plan: null,
+        amount: amountNum,
+        collectedBy: teacher.name,
+        note: item.trim(),
+      });
+      if (feeRes.error) {
+        setBusy(false);
+        // 記帳已成功，只是學生繳費同步失敗——提示但不回滾
+        return setErr(
+          `記帳已存，但學生繳費同步失敗：${feeRes.error}（可到學生資料手動補一筆）`
+        );
+      }
+    }
     setBusy(false);
-    if (error) return setErr(error);
     if (again) {
       setItem("");
       setAmount("");
       setCategoryId(categories.find((c) => c.kind === kind)?.id ?? "");
+      setStudentId("");
+      setStudentSearch("");
+      setSkipStudent(false);
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 1200);
     } else {
@@ -692,6 +771,78 @@ function EntryModal({
             ]}
           />
         </Field>
+
+        {/* 學費 → 同步到學生繳費紀錄 */}
+        {isTuition && (
+          <div className="space-y-2 rounded-xl border border-[#8CA07C]/40 bg-[#8CA07C]/5 px-3 py-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-[#5f7a4f]">
+                🎓 同步到學生繳費
+              </span>
+              {selectedStudent && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStudentId("");
+                    setStudentSearch("");
+                  }}
+                  className="text-xs text-black/45 hover:text-navy"
+                >
+                  更換
+                </button>
+              )}
+            </div>
+
+            {selectedStudent ? (
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="rounded-full border border-[#8CA07C]/40 bg-white px-2.5 py-1 font-medium text-navy">
+                  {selectedStudent.name}
+                  {selectedStudent.nickname ? `（${selectedStudent.nickname}）` : ""}
+                </span>
+                <span className="text-xs text-black/45">
+                  存檔會在此生建一筆繳費
+                </span>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <input
+                  className={inputCls}
+                  value={studentSearch}
+                  onChange={(e) => setStudentSearch(e.target.value)}
+                  placeholder="🔍 搜尋學生姓名／暱稱（打項目也會自動比對）"
+                />
+                <div className="flex flex-wrap gap-1.5">
+                  {studentMatches.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => {
+                        setStudentId(s.id);
+                        setSkipStudent(false);
+                      }}
+                      className="rounded-full border border-black/15 px-2.5 py-1 text-xs text-black/60 transition hover:border-navy hover:text-navy"
+                    >
+                      {s.name}
+                      {s.nickname ? `·${s.nickname}` : ""}
+                    </button>
+                  ))}
+                  {students.length > 0 && studentMatches.length === 0 && (
+                    <span className="text-xs text-black/40">查無符合的學生</span>
+                  )}
+                </div>
+                <label className="flex items-center gap-1.5 text-xs text-black/45">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 accent-navy"
+                    checked={skipStudent}
+                    onChange={(e) => setSkipStudent(e.target.checked)}
+                  />
+                  查無此生，這筆只記帳、不同步學生繳費
+                </label>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 存檔後餘額試算 */}
         <div className="rounded-xl bg-black/[0.03] px-3 py-2.5 text-sm">

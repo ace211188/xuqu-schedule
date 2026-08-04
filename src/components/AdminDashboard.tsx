@@ -15,6 +15,7 @@ import {
   monthOptions,
   type CellValue,
 } from "@/lib/schedule";
+import NotificationCenter from "./NotificationCenter";
 
 type TeacherStat = {
   id: string;
@@ -216,6 +217,9 @@ export default function AdminDashboard({
           </span>
         )}
       </div>
+
+      {/* 通知中心：手動發送 + 過往紀錄（僅管理員） */}
+      <NotificationCenter teacher={teacher} />
 
       {/* 帳號密碼一覽（老師忘記時可查） */}
       <div className="mb-4">

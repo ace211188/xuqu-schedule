@@ -8,6 +8,7 @@ import {
   createReimbursement,
   deleteReimbursement,
   fmtDate,
+  fmtMoney,
   todayISO,
   updateReimbursement,
   type Account,
@@ -27,6 +28,7 @@ import {
   inputCls,
 } from "./ui";
 import { ReceiptInput, ReceiptLinks } from "./Receipts";
+import { notifyAccountingSubmit } from "@/lib/notify";
 
 // 狀態排序：待辦優先
 const STATUS_ORDER: Record<Reimbursement["status"], number> = {
@@ -349,6 +351,15 @@ function ReimbForm({
         occurredOn,
         receiptPaths: paths,
       });
+      // 新代墊送出 → 即時通知管理員（宇群）核准/處理（best-effort，不擋流程）
+      if (!res.error) {
+        void notifyAccountingSubmit({
+          who: teacher.name,
+          what: `一筆代墊「${description.trim()}」${fmtMoney(amountNum)}${
+            overThreshold ? "（需核准）" : ""
+          }`,
+        });
+      }
     } else if (submitReceiptMode) {
       // 事前核准後補收據 → 進入待付款
       res = await updateReimbursement(existing.id, {
