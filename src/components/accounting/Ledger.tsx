@@ -127,8 +127,12 @@ export default function Ledger({
         g = { key, label: monthLabel(key), income: 0, expense: 0, rows: [] };
         map.set(key, g);
       }
-      if (r.signed_amount > 0) g.income += r.signed_amount;
-      else g.expense += -r.signed_amount;
+      // 轉帳只是帳戶間搬錢，不是真正收支（會一出一入兩邊灌水），不計入收/支小計，
+      // 但仍保留在列表中並照常影響餘額。
+      if (r.source_type !== "transfer") {
+        if (r.signed_amount > 0) g.income += r.signed_amount;
+        else g.expense += -r.signed_amount;
+      }
       g.rows.push(r);
     }
     return [...map.values()]; // rows 已是新→舊，故月份也是新→舊
@@ -180,6 +184,7 @@ export default function Ledger({
     let income = 0;
     let expense = 0;
     for (const r of searchRows) {
+      if (r.source_type === "transfer") continue; // 轉帳不算收支
       if (r.signed_amount > 0) income += r.signed_amount;
       else expense += -r.signed_amount;
     }
@@ -191,6 +196,7 @@ export default function Ledger({
     let income = 0;
     let expense = 0;
     for (const r of rows) {
+      if (r.source_type === "transfer") continue; // 轉帳不算收支
       if (r.signed_amount > 0) income += r.signed_amount;
       else expense += -r.signed_amount;
     }

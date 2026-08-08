@@ -51,11 +51,18 @@ export default function Monthly({
     [entries, month]
   );
 
-  const income = monthEntries.reduce(
+  // 內部轉帳（帳戶間搬錢）不是真正的收入/支出，會被記成一出一入兩筆，
+  // 計入收支只會兩邊同時灌水。故收支與分類明細一律排除轉帳分錄。
+  const flowEntries = useMemo(
+    () => monthEntries.filter((e) => e.source_type !== "transfer"),
+    [monthEntries]
+  );
+
+  const income = flowEntries.reduce(
     (s, e) => s + (e.signed_amount > 0 ? e.signed_amount : 0),
     0
   );
-  const expense = monthEntries.reduce(
+  const expense = flowEntries.reduce(
     (s, e) => s + (e.signed_amount < 0 ? -e.signed_amount : 0),
     0
   );
@@ -65,7 +72,7 @@ export default function Monthly({
   const byCat = useMemo(() => {
     const inc = new Map<string, number>();
     const exp = new Map<string, number>();
-    for (const e of monthEntries) {
+    for (const e of flowEntries) {
       const key = e.category_id ?? "__none__";
       if (e.signed_amount > 0)
         inc.set(key, (inc.get(key) ?? 0) + e.signed_amount);
@@ -80,7 +87,7 @@ export default function Monthly({
         }))
         .sort((a, b) => b.amt - a.amt);
     return { inc: toRows(inc), exp: toRows(exp) };
-  }, [monthEntries, catName]);
+  }, [flowEntries, catName]);
 
   // 各帳戶「期末餘額」＝期初 + 該月底(含)以前所有分錄
   const end = monthEndISO(month);
