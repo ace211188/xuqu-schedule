@@ -1067,35 +1067,42 @@ function FeeSection({
           {mine.map((r, i) => (
             <li
               key={r.id}
-              className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm ${
+              className={`rounded-xl px-3 py-2 text-sm ${
                 i === 0
                   ? "border border-[#8CA07C]/40 bg-white"
                   : "bg-white/60"
               }`}
             >
-              {i === 0 && (
-                <span className="rounded-full bg-[#8CA07C]/20 px-1.5 py-0.5 text-[10px] font-bold text-[#5f7a4f]">
-                  目前
+              <div className="flex items-center gap-2">
+                {i === 0 && (
+                  <span className="rounded-full bg-[#8CA07C]/20 px-1.5 py-0.5 text-[10px] font-bold text-[#5f7a4f]">
+                    目前
+                  </span>
+                )}
+                <span className="text-xs text-black/45">
+                  {fmtDate(r.charged_on)}
                 </span>
-              )}
-              <span className="text-xs text-black/45">
-                {fmtDate(r.charged_on)}
-              </span>
-              <span className="flex-1 truncate">{r.plan ?? "—"}</span>
-              <span className="tabular-nums font-medium">
-                {fmtMoney(r.amount)}
-              </span>
-              {r.collected_by && (
-                <span className="text-xs text-black/40">{r.collected_by}</span>
-              )}
-              {teacher.is_admin && (
-                <button
-                  onClick={() => remove(r.id)}
-                  className="text-xs text-black/30 hover:text-brand"
-                  title="刪除"
-                >
-                  ✕
-                </button>
+                <span className="flex-1 truncate">{r.plan ?? "—"}</span>
+                <span className="tabular-nums font-medium">
+                  {fmtMoney(r.amount)}
+                </span>
+                {r.collected_by && (
+                  <span className="text-xs text-black/40">{r.collected_by}</span>
+                )}
+                {teacher.is_admin && (
+                  <button
+                    onClick={() => remove(r.id)}
+                    className="text-xs text-black/30 hover:text-brand"
+                    title="刪除"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              {r.note && (
+                <p className="mt-1 whitespace-pre-wrap break-words pl-1 text-xs text-black/55">
+                  📝 {r.note}
+                </p>
               )}
             </li>
           ))}
