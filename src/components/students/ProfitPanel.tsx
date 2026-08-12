@@ -12,7 +12,7 @@ export default function ProfitPanel({
   profit: ProfitResult;
   onRefresh: () => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const [editingOverhead, setEditingOverhead] = useState(false);
   const [overheadDraft, setOverheadDraft] = useState(String(profit.fixedOverhead));
   const [savingOh, setSavingOh] = useState(false);
