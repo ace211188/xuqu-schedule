@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import PwaRegister from "@/components/PwaRegister";
-import BgmPlayer from "@/components/BgmPlayer";
 
 const base = process.env.NODE_ENV === "production" ? "/xuqu-schedule" : "";
 
@@ -35,7 +34,6 @@ export default function RootLayout({
     <html lang="zh-Hant" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
         {children}
-        <BgmPlayer />
         <PwaRegister />
       </body>
     </html>

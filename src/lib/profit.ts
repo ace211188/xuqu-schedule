@@ -53,9 +53,11 @@ export function computeProfit(params: {
   );
 
   // 分班：同 class_slot 一組；無班別者各自成組（以學生為單位）
+  // 毛利只計「在學」學生；其他狀態（試上/付定金/暫停/畢業/流失…）不列入
   type Grp = { key: string; slot: string | null; name: string; list: Student[] };
   const groups = new Map<string, Grp>();
   for (const s of students) {
+    if (s.status !== "在學") continue;
     const slot = (s.class_slot ?? "").trim();
     const key = slot ? `班:${slot}` : `個別:${s.id}`;
     let g = groups.get(key);

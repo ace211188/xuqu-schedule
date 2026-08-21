@@ -19,9 +19,31 @@ import {
   fetchFixedOverhead,
   type ProfitResult,
 } from "@/lib/profit";
+import {
+  IconUserCheck,
+  IconClipboardCheck,
+  IconPresentation,
+  IconCoin,
+  IconPlayerPause,
+  IconAward,
+  IconUserX,
+  type IconProps,
+} from "@tabler/icons-react";
+import type { ComponentType } from "react";
 import { useStudentsData } from "./useStudentsData";
 import StudentCard from "./StudentCard";
 import ProfitPanel from "./ProfitPanel";
+
+// 各狀態對應的線框圖示
+const STATUS_ICON: Record<StudentStatus, ComponentType<IconProps>> = {
+  在學: IconUserCheck,
+  完成免費測驗: IconClipboardCheck,
+  完成試上: IconPresentation,
+  付定金: IconCoin,
+  暫停: IconPlayerPause,
+  畢業: IconAward,
+  流失: IconUserX,
+};
 
 type FeeRecords = ReturnType<typeof useStudentsData>["feeRecords"];
 // 班別 → 人數（判斷雙軌團/精用）
@@ -80,8 +102,9 @@ export default function StudentsApp({
   const isAdmin = teacher.is_admin;
   const [q, setQ] = useState("");
   const [fCourse, setFCourse] = useState<string>("");
-  const [fStatus, setFStatus] = useState<string>("");
   const [fTeacher, setFTeacher] = useState<string>("");
+  // 左側直欄選中的狀態（中間顯示該狀態學生）；預設「在學」為主
+  const [statusView, setStatusView] = useState<StudentStatus>("在學");
   const [view, setView] = useState<View>("list");
   const [editing, setEditing] = useState<{ id: string | null } | null>(null);
 
@@ -138,7 +161,6 @@ export default function StudentsApp({
           if (!isDualTrack(s.course_type)) return false;
         } else if (s.course_type !== fCourse) return false;
       }
-      if (fStatus && s.status !== fStatus) return false;
       if (fTeacher && !splitTeachers(s.teacher).includes(fTeacher)) return false;
       if (kw) {
         const hay = [
@@ -156,7 +178,21 @@ export default function StudentsApp({
       }
       return true;
     });
-  }, [data.students, q, fCourse, fStatus, fTeacher]);
+  }, [data.students, q, fCourse, fTeacher]);
+
+  // 各狀態人數（左側直欄顯示）＋ 目前選中狀態的學生（中間顯示）
+  const statusCounts = useMemo(() => {
+    const m = new Map<StudentStatus, number>();
+    for (const s of filtered) {
+      const st = s.status as StudentStatus;
+      m.set(st, (m.get(st) ?? 0) + 1);
+    }
+    return m;
+  }, [filtered]);
+  const shown = useMemo(
+    () => filtered.filter((s) => s.status === statusView),
+    [filtered, statusView]
+  );
 
   const editingStudent =
     editing && editing.id
@@ -164,7 +200,16 @@ export default function StudentsApp({
       : null;
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-3xl px-4 py-6">
+    <>
+      {/* 左側浮動直條：狀態選擇器（垂直置中，滑上/點一下展開） */}
+      <StatusRail
+        counts={statusCounts}
+        selected={statusView}
+        onSelect={setStatusView}
+      />
+
+      {/* 中間主內容：目前選中狀態的學生（預設在學） */}
+      <main className="mx-auto min-h-screen w-full max-w-3xl px-4 py-6">
       <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-navy">學生資料</h1>
@@ -253,12 +298,6 @@ export default function StudentsApp({
           allLabel="全部課程"
           options={COURSE_TYPES as unknown as string[]}
         />
-        <FilterSelect
-          value={fStatus}
-          onChange={setFStatus}
-          allLabel="全部狀態"
-          options={ALL_STATUS as unknown as string[]}
-        />
         {teacherOptions.length > 0 && (
           <FilterSelect
             value={fTeacher}
@@ -271,36 +310,36 @@ export default function StudentsApp({
 
       {data.loading ? (
         <div className="py-16 text-center text-sm text-black/45">載入中…</div>
-      ) : filtered.length === 0 ? (
+      ) : shown.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-black/15 bg-white/50 px-4 py-12 text-center text-sm text-black/40">
           {data.students.length === 0
             ? "還沒有學生。點右上「＋新增學生」開始。"
-            : "沒有符合條件的學生。"}
+            : `目前沒有「${statusView}」的學生。`}
         </div>
       ) : view === "list" ? (
         <FlatView
-          students={filtered}
+          students={shown}
           feeRecords={data.feeRecords}
           sizeOf={sizeOf}
           onOpen={(id) => setEditing({ id })}
         />
       ) : view === "family" ? (
         <FamilyView
-          students={filtered}
+          students={shown}
           feeRecords={data.feeRecords}
           sizeOf={sizeOf}
           onOpen={(id) => setEditing({ id })}
         />
       ) : view === "teacher" ? (
         <TeacherView
-          students={filtered}
+          students={shown}
           feeRecords={data.feeRecords}
           sizeOf={sizeOf}
           onOpen={(id) => setEditing({ id })}
         />
       ) : (
         <GroupedView
-          students={filtered}
+          students={shown}
           feeRecords={data.feeRecords}
           sizeOf={sizeOf}
           onOpen={(id) => setEditing({ id })}
@@ -309,8 +348,9 @@ export default function StudentsApp({
       )}
 
       <p className="mt-4 text-center text-xs text-black/30">
-        共 {filtered.length} 位（總名冊 {data.students.length} 位）
+        {statusView} {shown.length} 位（總名冊 {data.students.length} 位）
       </p>
+      </main>
 
       {editing && (
         <StudentCard
@@ -324,7 +364,104 @@ export default function StudentsApp({
           onSaved={data.refresh}
         />
       )}
-    </main>
+    </>
+  );
+}
+
+// ── 左側浮動直條：狀態選擇器（垂直置中，滑上/點一下展開）──
+function StatusRail({
+  counts,
+  selected,
+  onSelect,
+}: {
+  counts: Map<StudentStatus, number>;
+  selected: StudentStatus;
+  onSelect: (s: StudentStatus) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  // 在學固定第一（主）；其餘依 ALL_STATUS 順序
+  const others = ALL_STATUS.filter((st) => st !== "在學");
+
+  // 手機：第一次點先展開；已展開再點才切換並收回
+  function activate(st: StudentStatus) {
+    if (!expanded) {
+      setExpanded(true);
+      return;
+    }
+    onSelect(st);
+    setExpanded(false);
+  }
+
+  return (
+    <nav
+      aria-label="狀態選擇"
+      onMouseEnter={() => setExpanded(true)}
+      onMouseLeave={() => setExpanded(false)}
+      className={`fixed left-2 top-1/2 z-40 -translate-y-1/2 overflow-hidden rounded-2xl border border-black/10 bg-white p-1.5 shadow-lg transition-[width] duration-200 ${
+        expanded ? "w-52" : "w-[52px]"
+      }`}
+    >
+      <StatusRailItem
+        status="在學"
+        count={counts.get("在學") ?? 0}
+        active={selected === "在學"}
+        expanded={expanded}
+        onActivate={activate}
+      />
+      <div className="my-1 border-t border-black/5" />
+      {others.map((st) => (
+        <StatusRailItem
+          key={st}
+          status={st}
+          count={counts.get(st) ?? 0}
+          active={selected === st}
+          expanded={expanded}
+          onActivate={activate}
+        />
+      ))}
+    </nav>
+  );
+}
+
+function StatusRailItem({
+  status,
+  count,
+  active,
+  expanded,
+  onActivate,
+}: {
+  status: StudentStatus;
+  count: number;
+  active: boolean;
+  expanded: boolean;
+  onActivate: (s: StudentStatus) => void;
+}) {
+  const Icon = STATUS_ICON[status];
+  return (
+    <button
+      onClick={() => onActivate(status)}
+      title={status}
+      aria-label={`${status}（${count} 位）`}
+      className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition ${
+        active ? "bg-navy text-white" : "text-black/60 hover:bg-black/5"
+      }`}
+    >
+      <Icon size={20} stroke={1.75} className="shrink-0" />
+      <span
+        className={`min-w-0 flex-1 truncate text-xs font-medium transition-opacity duration-150 ${
+          expanded ? "opacity-100" : "opacity-0"
+        }`}
+      >
+        {status}
+      </span>
+      <span
+        className={`shrink-0 text-xs tabular-nums transition-opacity duration-150 ${
+          expanded ? "opacity-100" : "opacity-0"
+        } ${active ? "text-white/80" : "text-black/35"}`}
+      >
+        {count}
+      </span>
+    </button>
   );
 }
 
@@ -570,19 +707,21 @@ function StudentRow({
       onClick={() => onOpen(s.id)}
       className="rounded-2xl border border-black/10 bg-white p-3 text-left shadow-sm transition hover:border-navy/30 active:scale-[0.99]"
     >
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-semibold text-navy">
+      <div className="flex min-w-0 items-center gap-1.5">
+        {s.status !== "在學" && (
+          <span
+            className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_TONE[s.status as StudentStatus]}`}
+          >
+            {s.status}
+          </span>
+        )}
+        <span className="truncate font-semibold text-navy">
           {s.name}
           {s.nickname && (
             <span className="ml-1 text-xs font-normal text-black/40">
               {s.nickname}
             </span>
           )}
-        </span>
-        <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_TONE[s.status as StudentStatus]}`}
-        >
-          {s.status}
         </span>
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-black/50">
