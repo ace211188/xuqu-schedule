@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Teacher } from "@/lib/useAuth";
 import {
-  ALL_STATUS,
   COURSE_TYPES,
   STATUS_TONE,
   displayCourseType,
@@ -24,6 +23,7 @@ import {
   IconClipboardCheck,
   IconPresentation,
   IconCoin,
+  IconFlag,
   IconPlayerPause,
   IconAward,
   IconUserX,
@@ -34,16 +34,31 @@ import { useStudentsData } from "./useStudentsData";
 import StudentCard from "./StudentCard";
 import ProfitPanel from "./ProfitPanel";
 
-// 各狀態對應的線框圖示
-const STATUS_ICON: Record<StudentStatus, ComponentType<IconProps>> = {
+// 左側直條可選的檢視：各狀態 ＋ 獨立的「待追蹤」旗標
+type RailView = StudentStatus | "待追蹤";
+
+// 各項對應的線框圖示（含待追蹤）
+const RAIL_ICON: Record<RailView, ComponentType<IconProps>> = {
   在學: IconUserCheck,
   完成免費測驗: IconClipboardCheck,
   完成試上: IconPresentation,
   付定金: IconCoin,
+  待追蹤: IconFlag,
   暫停: IconPlayerPause,
   畢業: IconAward,
   流失: IconUserX,
 };
+
+// 左側直條順序：在學置頂另處理；其餘依此排（待追蹤在暫停上方）
+const RAIL_ORDER: RailView[] = [
+  "完成免費測驗",
+  "完成試上",
+  "付定金",
+  "待追蹤",
+  "暫停",
+  "畢業",
+  "流失",
+];
 
 type FeeRecords = ReturnType<typeof useStudentsData>["feeRecords"];
 // 班別 → 人數（判斷雙軌團/精用）
@@ -103,8 +118,8 @@ export default function StudentsApp({
   const [q, setQ] = useState("");
   const [fCourse, setFCourse] = useState<string>("");
   const [fTeacher, setFTeacher] = useState<string>("");
-  // 左側直欄選中的狀態（中間顯示該狀態學生）；預設「在學」為主
-  const [statusView, setStatusView] = useState<StudentStatus>("在學");
+  // 左側直欄選中的項目（狀態或「待追蹤」）；預設「在學」為主
+  const [statusView, setStatusView] = useState<RailView>("在學");
   const [view, setView] = useState<View>("list");
   const [editing, setEditing] = useState<{ id: string | null } | null>(null);
 
@@ -180,17 +195,21 @@ export default function StudentsApp({
     });
   }, [data.students, q, fCourse, fTeacher]);
 
-  // 各狀態人數（左側直欄顯示）＋ 目前選中狀態的學生（中間顯示）
+  // 各項人數（左側直欄顯示）＋ 目前選中項的學生（中間顯示）
   const statusCounts = useMemo(() => {
-    const m = new Map<StudentStatus, number>();
+    const m = new Map<RailView, number>();
     for (const s of filtered) {
       const st = s.status as StudentStatus;
       m.set(st, (m.get(st) ?? 0) + 1);
+      if (s.needs_followup) m.set("待追蹤", (m.get("待追蹤") ?? 0) + 1);
     }
     return m;
   }, [filtered]);
   const shown = useMemo(
-    () => filtered.filter((s) => s.status === statusView),
+    () =>
+      statusView === "待追蹤"
+        ? filtered.filter((s) => s.needs_followup)
+        : filtered.filter((s) => s.status === statusView),
     [filtered, statusView]
   );
 
@@ -374,16 +393,14 @@ function StatusRail({
   selected,
   onSelect,
 }: {
-  counts: Map<StudentStatus, number>;
-  selected: StudentStatus;
-  onSelect: (s: StudentStatus) => void;
+  counts: Map<RailView, number>;
+  selected: RailView;
+  onSelect: (s: RailView) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  // 在學固定第一（主）；其餘依 ALL_STATUS 順序
-  const others = ALL_STATUS.filter((st) => st !== "在學");
 
   // 手機：第一次點先展開；已展開再點才切換並收回
-  function activate(st: StudentStatus) {
+  function activate(st: RailView) {
     if (!expanded) {
       setExpanded(true);
       return;
@@ -401,6 +418,7 @@ function StatusRail({
         expanded ? "w-52" : "w-[52px]"
       }`}
     >
+      {/* 在學固定置頂（主） */}
       <StatusRailItem
         status="在學"
         count={counts.get("在學") ?? 0}
@@ -409,7 +427,7 @@ function StatusRail({
         onActivate={activate}
       />
       <div className="my-1 border-t border-black/5" />
-      {others.map((st) => (
+      {RAIL_ORDER.map((st) => (
         <StatusRailItem
           key={st}
           status={st}
@@ -430,13 +448,13 @@ function StatusRailItem({
   expanded,
   onActivate,
 }: {
-  status: StudentStatus;
+  status: RailView;
   count: number;
   active: boolean;
   expanded: boolean;
-  onActivate: (s: StudentStatus) => void;
+  onActivate: (s: RailView) => void;
 }) {
-  const Icon = STATUS_ICON[status];
+  const Icon = RAIL_ICON[status];
   return (
     <button
       onClick={() => onActivate(status)}

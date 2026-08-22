@@ -123,6 +123,7 @@ export type Student = {
   birthday: string | null;
   school: string | null;
   status: StudentStatus;
+  needs_followup: boolean; // 待追蹤旗標（獨立於狀態，任何狀態皆可）
   enrolled_on: string | null;
   filed_on: string | null;
   father_name: string | null;

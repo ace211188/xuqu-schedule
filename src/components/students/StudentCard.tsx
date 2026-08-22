@@ -48,6 +48,7 @@ function blankForm(): StudentInput {
     birthday: null,
     school: null,
     status: "完成免費測驗",
+    needs_followup: false,
     enrolled_on: null,
     filed_on: null,
     father_name: null,
@@ -233,6 +234,22 @@ export default function StudentCard({
     else setEditing(false); // 存完回到唯讀檢視
   }
 
+  // 待追蹤：獨立旗標，直接切換即存（不必進編輯模式）
+  async function toggleFollowup() {
+    if (!student) return;
+    const next = !form.needs_followup;
+    set("needs_followup", next);
+    setBusy(true);
+    const { error } = await updateStudent(student.id, { needs_followup: next });
+    setBusy(false);
+    if (error) {
+      set("needs_followup", !next); // 失敗還原
+      setErr(error);
+      return;
+    }
+    onSaved();
+  }
+
   async function handleAdvance() {
     if (!student || !nxt) return;
     setBusy(true);
@@ -277,6 +294,20 @@ export default function StudentCard({
           <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-black/10 bg-white/70 p-3">
             <span className="text-sm text-black/50">目前狀態</span>
             <StatusPill status={form.status} />
+            <button
+              type="button"
+              onClick={toggleFollowup}
+              disabled={busy}
+              aria-pressed={form.needs_followup}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition disabled:opacity-60 ${
+                form.needs_followup
+                  ? "bg-amber-100 text-amber-700"
+                  : "border border-black/15 text-black/50 hover:border-black/40"
+              }`}
+            >
+              <span aria-hidden>{form.needs_followup ? "☑" : "☐"}</span>
+              待追蹤
+            </button>
             {nxt && (
               <GhostBtn tone="ok" onClick={handleAdvance} disabled={busy}>
                 ✓ 推進到「{nxt}」

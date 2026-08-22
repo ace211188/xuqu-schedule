@@ -39,6 +39,7 @@ create table if not exists public.students (
   birthday            text,                                 -- 出生年月日（保留原填法，可民國）
   school              text,                                 -- 就讀學校
   status              text not null default '在學',          -- 狀態（見上）
+  needs_followup      boolean not null default false,       -- 待追蹤旗標（獨立於狀態，任何狀態皆可）
   enrolled_on         text,                                 -- 入校日期（保留原填法）
   filed_on            text,                                 -- 建檔日期（保留原填法）
   -- 二、家長與聯絡
