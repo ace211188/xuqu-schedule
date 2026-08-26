@@ -52,8 +52,8 @@ const RAIL_ICON: Record<RailView, ComponentType<IconProps>> = {
 // 左側直條順序：在學置頂另處理；其餘依此排（待追蹤在暫停上方）
 const RAIL_ORDER: RailView[] = [
   "完成免費測驗",
-  "完成試上",
   "付定金",
+  "完成試上",
   "待追蹤",
   "暫停",
   "畢業",

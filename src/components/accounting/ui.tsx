@@ -1,8 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { fmtMoney } from "@/lib/accounting";
+import {
+  fmtMoney,
+  groupByWeek,
+  currentWeekKey,
+  type WeekGroup,
+} from "@/lib/accounting";
 
 // 金額（支出紅、收入綠、其他預設）
 export function Money({
@@ -302,6 +307,57 @@ export function Select({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// 依「月＞週」收合分組清單（週＝當月 1-7/8-14/…；預設只展開本週）
+export function WeekGroups<T>({
+  items,
+  getDate,
+  getKey,
+  renderItem,
+}: {
+  items: T[];
+  getDate: (t: T) => string | null | undefined;
+  getKey: (t: T) => string;
+  renderItem: (t: T) => ReactNode;
+}) {
+  const groups = groupByWeek(items, getDate);
+  const today = currentWeekKey();
+  const [overrides, setOverrides] = useState<Record<string, boolean>>({});
+  const isOpen = (g: WeekGroup<T>) => overrides[g.key] ?? g.key === today;
+  return (
+    <div className="space-y-2">
+      {groups.map((g) => {
+        const open = isOpen(g);
+        return (
+          <section
+            key={g.key}
+            className="overflow-hidden rounded-2xl border border-black/10 bg-white/60"
+          >
+            <button
+              onClick={() => setOverrides((o) => ({ ...o, [g.key]: !open }))}
+              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm"
+            >
+              <span className="font-medium text-navy">{g.label}</span>
+              <span className="flex items-center gap-2 text-xs text-black/45">
+                <span className="rounded-full bg-black/5 px-2 py-0.5 tabular-nums">
+                  {g.items.length}
+                </span>
+                <span>{open ? "▲" : "▼"}</span>
+              </span>
+            </button>
+            {open && (
+              <div className="space-y-2 border-t border-black/5 p-2">
+                {g.items.map((it) => (
+                  <div key={getKey(it)}>{renderItem(it)}</div>
+                ))}
+              </div>
+            )}
+          </section>
+        );
+      })}
     </div>
   );
 }

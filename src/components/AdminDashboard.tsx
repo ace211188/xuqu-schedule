@@ -226,9 +226,10 @@ export default function AdminDashboard({
       </div>
 
       {/* 通知中心：手動發送 + 過往紀錄（僅管理員） */}
-      <NotificationCenter teacher={teacher} />
+      {teacher.is_admin && <NotificationCenter teacher={teacher} />}
 
-      {/* 帳號密碼一覽（老師忘記時可查） */}
+      {/* 帳號密碼一覽（僅管理員；含全部老師密碼） */}
+      {teacher.is_admin && (
       <div className="mb-4">
         <button
           onClick={() => setShowCreds((v) => !v)}
@@ -263,6 +264,7 @@ export default function AdminDashboard({
           </div>
         )}
       </div>
+      )}
 
       {loading ? (
         <div className="py-16 text-center text-sm text-black/45">載入中…</div>

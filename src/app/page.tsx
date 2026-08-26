@@ -39,6 +39,7 @@ export default function Page() {
   const isAdmin = teacher.is_admin;
   const hasAccounting = isAdmin || teacher.can_accounting;
   const hasStudents = isAdmin || teacher.can_students;
+  const hasScheduleAdmin = isAdmin || teacher.can_schedule_admin;
   // 預設畫面：宇群(管理員＋記帳)→直接進記帳；純排課管理員→排課後台；一般老師→我的排課
   const defaultView: View = isAdmin
     ? teacher.can_accounting
@@ -75,8 +76,8 @@ export default function Page() {
     );
   }
 
-  // 排課後台（僅管理員）
-  if (isAdmin && current === "admin") {
+  // 排課後台（管理員或有排課後台權限者：宇群、美君、奕寬…）
+  if (hasScheduleAdmin && current === "admin") {
     return (
       <AdminDashboard
         teacher={teacher}
@@ -94,7 +95,7 @@ export default function Page() {
       teacher={teacher}
       onSignOut={signOut}
       onSwitchModule={toAccounting}
-      onOpenAdmin={isAdmin ? () => setView("admin") : undefined}
+      onOpenAdmin={hasScheduleAdmin ? () => setView("admin") : undefined}
       onOpenStudents={toStudents}
     />
   );

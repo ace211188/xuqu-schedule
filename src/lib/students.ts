@@ -14,11 +14,11 @@ export type StudentStatus =
   | "畢業"
   | "流失";
 
-// 自動推進的順序（免費測驗→試上→付定金→在學）
+// 自動推進的順序（免費測驗→付定金→試上→在學）
 export const STATUS_CHAIN: StudentStatus[] = [
   "完成免費測驗",
-  "完成試上",
   "付定金",
+  "完成試上",
   "在學",
 ];
 

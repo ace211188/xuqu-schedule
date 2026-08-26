@@ -155,10 +155,16 @@ returns trigger
 language plpgsql
 security definer
 as $$
+declare
+  requester_admin boolean;
 begin
+  select coalesce(t.is_admin, false) into requester_admin
+  from public.teachers t where t.id = new.requester_id;
+  requester_admin := coalesce(requester_admin, false);
+
   if tg_op = 'INSERT' then
-    new.needs_approval := (new.amount > 2000);
-    -- 超過 2000 一律要走事前申請；未達門檻可直接進入待付款
+    -- 管理者（宇群）自己送出免事前審核；其餘 >2000 才需核准
+    new.needs_approval := (new.amount > 2000) and not requester_admin;
     if new.needs_approval and new.status not in ('pending_approval','rejected') then
       new.status := 'pending_approval';
     end if;
@@ -169,7 +175,7 @@ begin
   end if;
 
   -- UPDATE
-  new.needs_approval := (new.amount > 2000);
+  new.needs_approval := (new.amount > 2000) and not requester_admin;
 
   if not public.is_admin() then
     -- 負責人（非管理者）的限制：

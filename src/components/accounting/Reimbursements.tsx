@@ -25,6 +25,7 @@ import {
   Money,
   PrimaryBtn,
   StatusPill,
+  WeekGroups,
   inputCls,
 } from "./ui";
 import { ReceiptInput, ReceiptLinks } from "./Receipts";
@@ -90,10 +91,12 @@ export default function Reimbursements({
       {sorted.length === 0 ? (
         <Empty>目前沒有代墊紀錄</Empty>
       ) : (
-        <div className="space-y-2">
-          {sorted.map((r) => (
+        <WeekGroups
+          items={sorted}
+          getDate={(r) => r.occurred_on}
+          getKey={(r) => r.id}
+          renderItem={(r) => (
             <ReimbCard
-              key={r.id}
               r={r}
               teacher={teacher}
               catName={catName}
@@ -129,8 +132,8 @@ export default function Reimbursements({
                 else await refresh();
               }}
             />
-          ))}
-        </div>
+          )}
+        />
       )}
 
       {formFor && (
@@ -334,7 +337,8 @@ function ReimbForm({
     !!existing && ["approved", "ready", "paid"].includes(existing.status);
 
   const amountNum = Number(amount);
-  const overThreshold = amountNum > APPROVAL_THRESHOLD;
+  // 管理者（宇群）自己送出免審核，因此不套用門檻提示與流程
+  const overThreshold = amountNum > APPROVAL_THRESHOLD && !teacher.is_admin;
 
   async function save() {
     setErr(null);
@@ -374,9 +378,9 @@ function ReimbForm({
         receipt_paths: paths,
       };
       if (!amountLocked) patch.amount = amountNum;
-      // 退回後重新編輯：送回審核流程
+      // 退回後重新編輯：送回審核流程（管理者免審核 → 直接待付款）
       if (existing.status === "rejected") {
-        patch.status = amountNum > APPROVAL_THRESHOLD ? "pending_approval" : "ready";
+        patch.status = overThreshold ? "pending_approval" : "ready";
         patch.reject_reason = null;
       }
       res = await updateReimbursement(existing.id, patch);

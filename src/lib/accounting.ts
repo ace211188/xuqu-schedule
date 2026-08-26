@@ -95,6 +95,58 @@ export type Collection = {
 // 超過此金額的代墊需事前申請核准（與資料庫觸發器一致）
 export const APPROVAL_THRESHOLD = 2000;
 
+// ── 代墊/代收清單：依「月＞週」分組（週＝當月 1-7/8-14/15-21/22-28/29+）──
+export function weekOfMonth(day: number): number {
+  if (day <= 7) return 1;
+  if (day <= 14) return 2;
+  if (day <= 21) return 3;
+  if (day <= 28) return 4;
+  return 5;
+}
+
+export type WeekGroup<T> = { key: string; label: string; items: T[] };
+
+// 今天所屬的「年-月-週」key（清單預設展開本週用）
+export function currentWeekKey(base = new Date()): string {
+  const y = base.getFullYear();
+  const m = base.getMonth() + 1;
+  return `${y}-${String(m).padStart(2, "0")}-w${weekOfMonth(base.getDate())}`;
+}
+
+// 依 occurred_on（YYYY-MM-DD）分組；月新→舊、週大→小；組內順序沿用輸入
+export function groupByWeek<T>(
+  items: T[],
+  getDate: (t: T) => string | null | undefined
+): WeekGroup<T>[] {
+  const map = new Map<string, WeekGroup<T>>();
+  for (const it of items) {
+    const raw = (getDate(it) ?? "").slice(0, 10);
+    const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    let key: string;
+    let label: string;
+    if (!m) {
+      key = "0000-00-w0";
+      label = "（無日期）";
+    } else {
+      const y = Number(m[1]);
+      const mo = Number(m[2]);
+      const w = weekOfMonth(Number(m[3]));
+      const start = (w - 1) * 7 + 1;
+      const lastDay = new Date(y, mo, 0).getDate();
+      const end = w === 5 ? lastDay : Math.min(w * 7, lastDay);
+      key = `${m[1]}-${m[2]}-w${w}`;
+      label = `${y} 年 ${mo} 月・第 ${w} 週（${mo}/${start}–${mo}/${end}）`;
+    }
+    let g = map.get(key);
+    if (!g) {
+      g = { key, label, items: [] };
+      map.set(key, g);
+    }
+    g.items.push(it);
+  }
+  return Array.from(map.values()).sort((a, b) => b.key.localeCompare(a.key));
+}
+
 // ── 顯示用文字 ───────────────────────────────────────
 export const REIMB_STATUS_LABEL: Record<ReimbStatus, string> = {
   pending_approval: "待核准",

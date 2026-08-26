@@ -24,6 +24,7 @@ import {
   Money,
   PrimaryBtn,
   StatusPill,
+  WeekGroups,
   inputCls,
 } from "./ui";
 import { ReceiptInput, ReceiptLinks } from "./Receipts";
@@ -89,10 +90,12 @@ export default function Collections({
       {sorted.length === 0 ? (
         <Empty>目前沒有收款紀錄</Empty>
       ) : (
-        <div className="space-y-2">
-          {sorted.map((c) => (
+        <WeekGroups
+          items={sorted}
+          getDate={(c) => c.occurred_on}
+          getKey={(c) => c.id}
+          renderItem={(c) => (
             <CollectionCard
-              key={c.id}
               c={c}
               teacher={teacher}
               catName={catName}
@@ -125,8 +128,8 @@ export default function Collections({
                 else await refresh();
               }}
             />
-          ))}
-        </div>
+          )}
+        />
       )}
 
       {formFor && (

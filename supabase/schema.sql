@@ -36,19 +36,35 @@ as $$
   );
 $$;
 
+-- 排課後台權限（可看全部老師排課，獨立於 is_admin）
+alter table public.teachers
+  add column if not exists can_schedule_admin boolean not null default false;
+
+create or replace function public.can_schedule_admin()
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select public.is_admin() or exists (
+    select 1 from public.teachers
+    where id = auth.uid() and can_schedule_admin
+  );
+$$;
+
 -- ── 開啟 Row Level Security ──
 alter table public.teachers       enable row level security;
 alter table public.schedule_slots enable row level security;
 
--- teachers：本人可讀自己；管理員可讀全部
+-- teachers：本人可讀自己；管理員／排課後台可讀全部
 drop policy if exists "read teachers" on public.teachers;
 create policy "read teachers" on public.teachers
-  for select using (id = auth.uid() or public.is_admin());
+  for select using (id = auth.uid() or public.can_schedule_admin());
 
--- schedule_slots：本人可讀寫自己；管理員可讀全部
+-- schedule_slots：本人可讀寫自己；管理員／排課後台可讀全部
 drop policy if exists "read slots" on public.schedule_slots;
 create policy "read slots" on public.schedule_slots
-  for select using (teacher_id = auth.uid() or public.is_admin());
+  for select using (teacher_id = auth.uid() or public.can_schedule_admin());
 
 drop policy if exists "insert own slots" on public.schedule_slots;
 create policy "insert own slots" on public.schedule_slots
