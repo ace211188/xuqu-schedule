@@ -41,11 +41,11 @@ export function ReceiptInput({
         ))}
         <label className="flex h-16 w-16 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-black/25 text-xs text-black/50 hover:border-navy">
           {busy ? "…" : "＋ 收據"}
+          {/* 不設 capture：手機會跳出「相簿／拍照／檔案」選單，可從相簿選也可現拍 */}
           <input
             type="file"
             accept="image/*,application/pdf"
             multiple
-            capture="environment"
             className="hidden"
             onChange={onPick}
           />
