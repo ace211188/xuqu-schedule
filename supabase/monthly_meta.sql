@@ -12,7 +12,7 @@ alter table public.monthly_meta enable row level security;
 
 drop policy if exists "read meta" on public.monthly_meta;
 create policy "read meta" on public.monthly_meta
-  for select using (teacher_id = auth.uid() or public.is_admin());
+  for select using (teacher_id = auth.uid() or public.can_schedule_admin());
 
 drop policy if exists "insert own meta" on public.monthly_meta;
 create policy "insert own meta" on public.monthly_meta

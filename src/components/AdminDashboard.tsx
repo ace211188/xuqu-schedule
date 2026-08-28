@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Teacher } from "@/lib/useAuth";
 import {
@@ -89,72 +89,85 @@ export default function AdminDashboard({
       });
   }, []);
 
-  useEffect(() => {
-    let active = true;
+  const reqSeq = useRef(0);
+  const reload = useCallback(async () => {
+    const seq = ++reqSeq.current;
     setLoading(true);
-    (async () => {
-      const [{ data: teachers }, { data: slots }, { data: metas }] =
-        await Promise.all([
-          supabase
-            .from("teachers")
-            .select("id,name,is_admin")
-            // 收集全部會教課的老師（含宇群）；只排除教室端裝置帳號「管理員」
-            .neq("name", "管理員")
-            .order("name"),
-          supabase
-            .from("schedule_slots")
-            .select("teacher_id,day,slot,state")
-            .eq("month", month),
-          supabase
-            .from("monthly_meta")
-            .select("teacher_id,note,confirmed_at")
-            .eq("month", month),
-        ]);
-      if (!active) return;
+    const [{ data: teachers }, { data: slots }, { data: metas }] =
+      await Promise.all([
+        supabase
+          .from("teachers")
+          .select("id,name,is_admin")
+          // 收集全部會教課的老師（含宇群）；只排除教室端裝置帳號「管理員」
+          .neq("name", "管理員")
+          .order("name"),
+        supabase
+          .from("schedule_slots")
+          .select("teacher_id,day,slot,state")
+          .eq("month", month),
+        supabase
+          .from("monthly_meta")
+          .select("teacher_id,note,confirmed_at")
+          .eq("month", month),
+      ]);
+    if (seq !== reqSeq.current) return; // 有更新的請求進來，丟棄舊結果
 
-      const byTeacher = new Map<string, Record<string, CellValue>>();
-      for (const r of slots ?? []) {
-        const m = byTeacher.get(r.teacher_id) ?? {};
-        m[keyOf(r.day, r.slot)] = r.state as CellValue;
-        byTeacher.set(r.teacher_id, m);
-      }
-      const metaByTeacher = new Map<
-        string,
-        { note: string; confirmed_at: string | null }
-      >();
-      for (const m of metas ?? [])
-        metaByTeacher.set(m.teacher_id, {
-          note: m.note ?? "",
-          confirmed_at: m.confirmed_at ?? null,
-        });
-
-      const out: TeacherStat[] = (teachers ?? []).map((t) => {
-        const cells = byTeacher.get(t.id) ?? {};
-        let available = 0,
-          busy = 0;
-        for (const v of Object.values(cells)) {
-          if (v === AVAILABLE) available++;
-          else if (v === BUSY) busy++;
-        }
-        const meta = metaByTeacher.get(t.id);
-        return {
-          id: t.id,
-          name: t.name,
-          filled: available + busy > 0,
-          available,
-          busy,
-          cells,
-          note: meta?.note ?? "",
-          confirmedAt: meta?.confirmed_at ?? null,
-        };
+    const byTeacher = new Map<string, Record<string, CellValue>>();
+    for (const r of slots ?? []) {
+      const m = byTeacher.get(r.teacher_id) ?? {};
+      m[keyOf(r.day, r.slot)] = r.state as CellValue;
+      byTeacher.set(r.teacher_id, m);
+    }
+    const metaByTeacher = new Map<
+      string,
+      { note: string; confirmed_at: string | null }
+    >();
+    for (const m of metas ?? [])
+      metaByTeacher.set(m.teacher_id, {
+        note: m.note ?? "",
+        confirmed_at: m.confirmed_at ?? null,
       });
-      setStats(out);
-      setLoading(false);
-    })();
-    return () => {
-      active = false;
-    };
+
+    const out: TeacherStat[] = (teachers ?? []).map((t) => {
+      const cells = byTeacher.get(t.id) ?? {};
+      let available = 0,
+        busy = 0;
+      for (const v of Object.values(cells)) {
+        if (v === AVAILABLE) available++;
+        else if (v === BUSY) busy++;
+      }
+      const meta = metaByTeacher.get(t.id);
+      return {
+        id: t.id,
+        name: t.name,
+        filled: available + busy > 0,
+        available,
+        busy,
+        cells,
+        note: meta?.note ?? "",
+        confirmedAt: meta?.confirmed_at ?? null,
+      };
+    });
+    setStats(out);
+    setLoading(false);
   }, [month]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  // 老師更新後即時反映：切回本分頁 / 視窗重新聚焦時自動重抓
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === "visible") reload();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [reload]);
 
   const filledCount = stats.filter((s) => s.filled).length;
   const selectedStat = stats.find((s) => s.id === selected) ?? null;
@@ -219,6 +232,13 @@ export default function AdminDashboard({
             </option>
           ))}
         </select>
+        <button
+          onClick={reload}
+          disabled={loading}
+          className="rounded-lg border border-black/15 bg-white px-3 py-1.5 text-sm text-black/60 transition hover:border-navy disabled:opacity-50"
+        >
+          {loading ? "更新中…" : "🔄 重新整理"}
+        </button>
         {!loading && (
           <span className="ml-auto rounded-full bg-navy px-3 py-1 text-xs font-medium text-white">
             {filledCount} / {stats.length} 位老師已填
