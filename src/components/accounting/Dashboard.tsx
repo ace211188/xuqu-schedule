@@ -1,11 +1,20 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { Teacher } from "@/lib/useAuth";
-import { fmtMoney, type Reimbursement } from "@/lib/accounting";
+import {
+  fmtMoney,
+  fmtDate,
+  updateReimbursement,
+  REIMB_STATUS_LABEL,
+  type Account,
+  type Reimbursement,
+} from "@/lib/accounting";
 import type { AccountingData } from "./useAccountingData";
 import type { AccountingTab } from "./AccountingApp";
-import { Card, Empty, Money, SectionTitle } from "./ui";
+import { Card, Empty, GhostBtn, Modal, Money, SectionTitle, StatusPill } from "./ui";
+import { PayModal } from "./Reimbursements";
+import { ReceiptLinks } from "./Receipts";
 import { CountMoney } from "./anim";
 
 export default function Dashboard({
@@ -59,7 +68,16 @@ function AdminSummary({
   data: AccountingData;
   onNavigate: (tab: AccountingTab) => void;
 }) {
-  const { reimbursements, collections, balances, teacherNames, accounts } = data;
+  const { reimbursements, collections, balances, teacherNames, accounts, categories, refresh } =
+    data;
+
+  // 點某人名字 → 跳出他的待付款明細
+  const [personId, setPersonId] = useState<string | null>(null);
+  const catName = useMemo(
+    () => new Map(categories.map((c) => [c.id, c.name])),
+    [categories]
+  );
+  const payAccounts = useMemo(() => accounts.filter((a) => a.active), [accounts]);
 
   const pendingApproval = reimbursements.filter(
     (r) => r.status === "pending_approval"
@@ -125,10 +143,10 @@ function AdminSummary({
             {perPerson.map(([id, total]) => (
               <button
                 key={id}
-                onClick={() => onNavigate("reimb")}
+                onClick={() => setPersonId(id)}
                 className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-black/[0.02]"
               >
-                <span className="font-medium text-navy">
+                <span className="font-medium text-navy underline decoration-dotted decoration-black/25 underline-offset-4">
                   {teacherNames.get(id) ?? "—"}
                 </span>
                 <Money value={total} className="text-brand" />
@@ -203,7 +221,102 @@ function AdminSummary({
           </p>
         </Card>
       )}
+
+      {personId && (
+        <PersonPayModal
+          name={teacherNames.get(personId) ?? "—"}
+          items={readyToPay.filter((r) => r.requester_id === personId)}
+          payAccounts={payAccounts}
+          catName={catName}
+          onClose={() => setPersonId(null)}
+          onChanged={refresh}
+        />
+      )}
     </div>
+  );
+}
+
+// 某人的待付款明細（彈窗；可直接付款、看收據）
+function PersonPayModal({
+  name,
+  items,
+  payAccounts,
+  catName,
+  onClose,
+  onChanged,
+}: {
+  name: string;
+  items: Reimbursement[];
+  payAccounts: Account[];
+  catName: Map<string, string>;
+  onClose: () => void;
+  onChanged: () => Promise<void> | void;
+}) {
+  const [pay, setPay] = useState<Reimbursement | null>(null);
+  const total = items.reduce((s, r) => s + r.amount, 0);
+  return (
+    <Modal title={`${name}・待付款明細`} onClose={onClose}>
+      <div className="space-y-2 pb-2">
+        {items.length === 0 ? (
+          <Empty>沒有待付款項目 🎉</Empty>
+        ) : (
+          <>
+            {items.map((r) => (
+              <Card key={r.id}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-navy">
+                        {r.description}
+                      </span>
+                      <StatusPill label={REIMB_STATUS_LABEL[r.status]} />
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-black/50">
+                      <span>日期：{fmtDate(r.occurred_on)}</span>
+                      {r.category_id && (
+                        <span>類別：{catName.get(r.category_id) ?? "—"}</span>
+                      )}
+                    </div>
+                  </div>
+                  <Money value={r.amount} className="shrink-0 text-lg" />
+                </div>
+                <div className="mt-2">
+                  <ReceiptLinks paths={r.receipt_paths} />
+                </div>
+                <div className="mt-3">
+                  <GhostBtn tone="ok" onClick={() => setPay(r)}>
+                    付款
+                  </GhostBtn>
+                </div>
+              </Card>
+            ))}
+            <div className="flex items-center justify-between px-1 pt-1 text-sm">
+              <span className="text-black/50">合計</span>
+              <Money value={total} className="text-brand" />
+            </div>
+          </>
+        )}
+      </div>
+
+      {pay && (
+        <PayModal
+          accounts={payAccounts}
+          amount={pay.amount}
+          onClose={() => setPay(null)}
+          onConfirm={async (accountId) => {
+            const { error } = await updateReimbursement(pay.id, {
+              status: "paid",
+              paid_account_id: accountId,
+            });
+            if (error) alert(error);
+            else {
+              setPay(null);
+              await onChanged();
+            }
+          }}
+        />
+      )}
+    </Modal>
   );
 }
 
