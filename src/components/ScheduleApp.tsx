@@ -44,7 +44,7 @@ export default function ScheduleApp({
   onOpenStudents?: () => void;
 }) {
   const months = useMemo(() => monthOptions(new Date(), 4), []);
-  const [month, setMonth] = useState(months[1]?.value ?? months[0].value); // 預設下個月
+  const [month, setMonth] = useState(months[0].value); // 預設這個月
   const [tool, setTool] = useState<Tool>(AVAILABLE);
   const [selectedDay, setSelectedDay] = useState<string>(DAYS[0].key);
   const [cells, setCells] = useState<Record<string, CellValue>>({});

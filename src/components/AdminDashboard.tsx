@@ -59,7 +59,7 @@ export default function AdminDashboard({
   onOpenStudents?: () => void;
 }) {
   const months = useMemo(() => monthOptions(new Date(), 4), []);
-  // 預設本月（monthOptions[0]＝當月）
+  // 預設這個月：與老師端「我的排課」一致
   const [month, setMonth] = useState(months[0].value);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<TeacherStat[]>([]);
