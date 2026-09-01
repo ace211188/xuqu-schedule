@@ -109,7 +109,7 @@ export const REFERRAL_HINT = "口碑介紹：舊生 −1000、新生 −500（�
 export const COLLECTORS = ["宇群", "美君", "奕寬"] as const;
 
 // 上課老師快速選項
-export const TEACHERS = ["宇群", "美君", "奕寬", "蓁芸"] as const;
+export const TEACHERS = ["宇群", "美君", "奕寬", "蓁芸", "孟凱", "恩妤"] as const;
 
 // 主要聯絡人快速選項
 export const CONTACTS = ["媽", "爸", "爸+媽", "本人"] as const;
