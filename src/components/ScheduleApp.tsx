@@ -99,12 +99,13 @@ export default function ScheduleApp({
         setLoading(false);
         return;
       }
-      // 這個月沒資料 → 沿用最近一個有填的月份（草稿，需重新送出才算數）
+      // 這個月沒資料 → 沿用「最近一個有填的月份」當草稿（不分前後：老師若已填
+      // 較晚的月份，較早且未填的月份也會帶入，需重新送出才算數）
       const { data: prev } = await supabase
         .from("schedule_slots")
         .select("month,day,slot,state")
         .eq("teacher_id", teacher.id)
-        .lt("month", month)
+        .neq("month", month)
         .order("month", { ascending: false });
       if (!active) return;
       if (prev && prev.length) {
