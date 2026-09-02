@@ -21,13 +21,20 @@ import { enablePush, pushSupported } from "@/lib/push";
 type TeacherStat = {
   id: string;
   name: string;
-  filled: boolean;
   available: number;
   busy: number;
   cells: Record<string, CellValue>;
   note: string;
-  confirmedAt: string | null;
+  confirmedAt: string | null; // 所顯示月份的送出時間
+  fromMonth: string; // 實際顯示的是哪個月（本月或最近送出月）
+  fallback: boolean; // true＝本月未送出，顯示的是其他月份
+  submitted: boolean; // 本月已送出
 };
+
+// "2026-08" → "8 月"
+function moLabel(m: string) {
+  return `${Number(m.split("-")[1])} 月`;
+}
 
 function fmtTime(iso: string) {
   const d = new Date(iso);
@@ -112,6 +119,7 @@ export default function AdminDashboard({
       ]);
     if (seq !== reqSeq.current) return; // 有更新的請求進來，丟棄舊結果
 
+    // 本月：格子與 meta
     const byTeacher = new Map<string, Record<string, CellValue>>();
     for (const r of slots ?? []) {
       const m = byTeacher.get(r.teacher_id) ?? {};
@@ -128,24 +136,86 @@ export default function AdminDashboard({
         confirmed_at: m.confirmed_at ?? null,
       });
 
-    const out: TeacherStat[] = (teachers ?? []).map((t) => {
-      const cells = byTeacher.get(t.id) ?? {};
+    // 「本月已送出」＝ monthly_meta 有 confirmed_at（按過送出）。未送出者改抓最近
+    // 一次送出的月份（老師端每點一格會即時存草稿，故不能只看有沒有格子）。
+    const list = (teachers ?? []) as { id: string; name: string }[];
+    const needFallback = list
+      .map((t) => t.id)
+      .filter((id) => !metaByTeacher.get(id)?.confirmed_at);
+
+    const fbMonth = new Map<string, string>(); // teacher → 最近送出月份
+    const fbMeta = new Map<
+      string,
+      { note: string; confirmed_at: string | null }
+    >();
+    if (needFallback.length) {
+      const { data: fbMetas } = await supabase
+        .from("monthly_meta")
+        .select("teacher_id,month,note,confirmed_at")
+        .in("teacher_id", needFallback)
+        .neq("month", month)
+        .not("confirmed_at", "is", null)
+        .order("month", { ascending: false });
+      for (const m of fbMetas ?? []) {
+        if (!fbMonth.has(m.teacher_id)) {
+          fbMonth.set(m.teacher_id, m.month as string);
+          fbMeta.set(m.teacher_id, {
+            note: m.note ?? "",
+            confirmed_at: m.confirmed_at ?? null,
+          });
+        }
+      }
+    }
+
+    // 抓 fallback 月份的格子（只取每位老師「最近送出月」那一份）
+    const fbCells = new Map<string, Record<string, CellValue>>();
+    if (fbMonth.size) {
+      const ids = [...fbMonth.keys()];
+      const uniqMonths = [...new Set(fbMonth.values())];
+      const { data: fbSlots } = await supabase
+        .from("schedule_slots")
+        .select("teacher_id,month,day,slot,state")
+        .in("teacher_id", ids)
+        .in("month", uniqMonths);
+      for (const r of fbSlots ?? []) {
+        if (fbMonth.get(r.teacher_id) !== r.month) continue;
+        const m = fbCells.get(r.teacher_id) ?? {};
+        m[keyOf(r.day, r.slot)] = r.state as CellValue;
+        fbCells.set(r.teacher_id, m);
+      }
+    }
+    if (seq !== reqSeq.current) return;
+
+    const out: TeacherStat[] = list.map((t) => {
+      const submitted = !!metaByTeacher.get(t.id)?.confirmed_at;
+      const useFallback = !submitted && fbMonth.has(t.id);
+      const cells = submitted
+        ? byTeacher.get(t.id) ?? {}
+        : useFallback
+        ? fbCells.get(t.id) ?? {}
+        : {};
       let available = 0,
         busy = 0;
       for (const v of Object.values(cells)) {
         if (v === AVAILABLE) available++;
         else if (v === BUSY) busy++;
       }
-      const meta = metaByTeacher.get(t.id);
+      const meta = submitted
+        ? metaByTeacher.get(t.id)
+        : useFallback
+        ? fbMeta.get(t.id)
+        : undefined;
       return {
         id: t.id,
         name: t.name,
-        filled: available + busy > 0,
         available,
         busy,
         cells,
         note: meta?.note ?? "",
         confirmedAt: meta?.confirmed_at ?? null,
+        fromMonth: useFallback ? fbMonth.get(t.id)! : month,
+        fallback: useFallback,
+        submitted,
       };
     });
     setStats(out);
@@ -169,7 +239,7 @@ export default function AdminDashboard({
     };
   }, [reload]);
 
-  const filledCount = stats.filter((s) => s.filled).length;
+  const filledCount = stats.filter((s) => s.submitted).length;
   const selectedStat = stats.find((s) => s.id === selected) ?? null;
 
   return (
@@ -307,9 +377,13 @@ export default function AdminDashboard({
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-navy">{s.name}老師</span>
-                    {s.filled ? (
+                    {s.submitted ? (
                       <span className="rounded-full bg-[#8CA07C]/15 px-2 py-0.5 text-xs font-medium text-[#5f7a4f]">
-                        已填
+                        已送出
+                      </span>
+                    ) : s.fallback ? (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                        顯示 {moLabel(s.fromMonth)}
                       </span>
                     ) : (
                       <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-medium text-brand">
@@ -335,8 +409,10 @@ export default function AdminDashboard({
                   </div>
                   <div className="mt-2 flex items-center gap-2 text-xs text-black/45">
                     <span>
-                      {s.confirmedAt
-                        ? `最後更新 ${fmtTime(s.confirmedAt)}`
+                      {s.submitted && s.confirmedAt
+                        ? `最後送出 ${fmtTime(s.confirmedAt)}`
+                        : s.fallback && s.confirmedAt
+                        ? `最近送出 ${fmtTime(s.confirmedAt)}（${moLabel(s.fromMonth)}）`
                         : "尚未確認更新"}
                     </span>
                     {s.note && (
@@ -357,8 +433,14 @@ export default function AdminDashboard({
           {selectedStat && (
             <section className="mt-5">
               <h2 className="mb-2 text-sm font-semibold text-navy">
-                {selectedStat.name}老師 · {month} 週表
+                {selectedStat.name}老師 · {selectedStat.fromMonth} 週表
               </h2>
+              {selectedStat.fallback && (
+                <div className="mb-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  本月（{month}）尚未送出，以下為最近一次送出的
+                  <b> {moLabel(selectedStat.fromMonth)}</b>排課。
+                </div>
+              )}
               {selectedStat.note && (
                 <div className="mb-2 rounded-xl bg-brand/5 px-3 py-2 text-sm text-black/70">
                   <span className="font-medium text-brand">📝 備註：</span>
