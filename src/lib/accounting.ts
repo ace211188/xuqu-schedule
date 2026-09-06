@@ -92,6 +92,27 @@ export type Collection = {
   created_at: string;
 };
 
+export type PurchaseStatus = "pending" | "purchased" | "arrived" | "cancelled";
+export type Purchase = {
+  id: string;
+  item_name: string;
+  quantity: number;
+  note: string | null;
+  est_amount: number | null;
+  actual_amount: number | null;
+  image_paths: string[];
+  category_id: string | null;
+  requester_id: string;
+  status: PurchaseStatus;
+  reimbursement_id: string | null;
+  purchased_by: string | null;
+  purchased_at: string | null;
+  arrived_at: string | null;
+  cancel_reason: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
 // 超過此金額的代墊需事前申請核准（與資料庫觸發器一致）
 export const APPROVAL_THRESHOLD = 2000;
 
@@ -160,6 +181,13 @@ export const COLLECTION_STATUS_LABEL: Record<CollectionStatus, string> = {
   pending_confirm: "待確認",
   confirmed: "已確認入帳",
   rejected: "已退回",
+};
+
+export const PURCHASE_STATUS_LABEL: Record<PurchaseStatus, string> = {
+  pending: "待採購",
+  purchased: "已採購",
+  arrived: "已到貨",
+  cancelled: "已取消",
 };
 
 export const ACCOUNT_TYPE_LABEL: Record<AccountType, string> = {
@@ -272,6 +300,14 @@ export async function fetchCollections(): Promise<Collection[]> {
     .select("*")
     .order("created_at", { ascending: false });
   return (data ?? []) as Collection[];
+}
+
+export async function fetchPurchases(): Promise<Purchase[]> {
+  const { data } = await supabase
+    .from("acc_purchases")
+    .select("*")
+    .order("created_at", { ascending: false });
+  return (data ?? []) as Purchase[];
 }
 
 // ── 內部轉帳：一次寫入兩筆分錄（轉出負、轉入正）────────
@@ -411,6 +447,108 @@ export async function deleteCollection(id: string): Promise<Res> {
     .delete()
     .eq("id", id);
   return { error: error?.message ?? null };
+}
+
+// ── 採購 ─────────────────────────────────────────────
+// 新增採購需求：一律從「待採購」開始（狀態由 RLS 限制）
+export async function createPurchase(p: {
+  requesterId: string;
+  itemName: string;
+  quantity: number;
+  note: string | null;
+  estAmount: number | null;
+  imagePaths: string[];
+}): Promise<Res> {
+  const { error } = await supabase.from("acc_purchases").insert({
+    requester_id: p.requesterId,
+    created_by: p.requesterId,
+    item_name: p.itemName,
+    quantity: p.quantity,
+    note: p.note,
+    est_amount: p.estAmount,
+    image_paths: p.imagePaths,
+  });
+  return { error: error?.message ?? null };
+}
+
+// 一般欄位更新（需求者改自己待採購的品項）＋ 狀態流轉（到貨/取消，觸發器把關）
+export async function updatePurchase(
+  id: string,
+  patch: Partial<
+    Pick<
+      Purchase,
+      | "item_name"
+      | "quantity"
+      | "note"
+      | "est_amount"
+      | "image_paths"
+      | "status"
+      | "cancel_reason"
+    >
+  >
+): Promise<Res> {
+  const { error } = await supabase
+    .from("acc_purchases")
+    .update(patch)
+    .eq("id", id);
+  return { error: error?.message ?? null };
+}
+
+export async function deletePurchase(id: string): Promise<Res> {
+  const { error } = await supabase.from("acc_purchases").delete().eq("id", id);
+  return { error: error?.message ?? null };
+}
+
+// 標記已採購：填實際金額/類別；可選擇順便開一張採購負責人的代墊單。
+// 兩步（先建代墊、再回寫 reimbursement_id）；若第二步失敗會把剛建的代墊刪掉，避免孤兒單。
+export async function markPurchased(p: {
+  purchaseId: string;
+  purchaserId: string; // 採購負責人（美君）＝ auth.uid()
+  actualAmount: number;
+  categoryId: string | null;
+  imagePaths: string[];
+  openReimbursement: boolean;
+  description: string; // 給代墊用，例「採購：白板筆 ×2」
+  occurredOn: string;
+}): Promise<Res & { reimbursementId: string | null }> {
+  let reimbursementId: string | null = null;
+
+  if (p.openReimbursement) {
+    const { data, error } = await supabase
+      .from("acc_reimbursements")
+      .insert({
+        requester_id: p.purchaserId,
+        amount: p.actualAmount,
+        category_id: p.categoryId,
+        description: p.description,
+        occurred_on: p.occurredOn,
+        receipt_paths: p.imagePaths,
+      })
+      .select("id")
+      .single();
+    if (error) return { error: error.message, reimbursementId: null };
+    reimbursementId = data.id as string;
+  }
+
+  const { error } = await supabase
+    .from("acc_purchases")
+    .update({
+      status: "purchased",
+      actual_amount: p.actualAmount,
+      category_id: p.categoryId,
+      image_paths: p.imagePaths,
+      reimbursement_id: reimbursementId,
+    })
+    .eq("id", p.purchaseId);
+
+  if (error) {
+    // 回滾剛建立的代墊，避免留下沒被關聯的孤兒單
+    if (reimbursementId) {
+      await supabase.from("acc_reimbursements").delete().eq("id", reimbursementId);
+    }
+    return { error: error.message, reimbursementId: null };
+  }
+  return { error: null, reimbursementId };
 }
 
 // 流水帳：手動新增一筆分錄（僅管理者，RLS 把關）

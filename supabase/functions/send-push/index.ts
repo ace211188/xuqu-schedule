@@ -40,7 +40,7 @@ const VAPID_SUBJECT =
 webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
 
 type Body = {
-  mode: "manual" | "accounting" | "test";
+  mode: "manual" | "accounting" | "purchase" | "test";
   title?: string;
   body?: string;
   teacherIds?: string[]; // manual：指定收件老師（空／未給＝所有已訂閱者）
@@ -119,6 +119,17 @@ Deno.serve(async (req) => {
     notifyBody = notifyBody || `${me.name} 送出一筆代收/代墊，記得處理一下 💛`;
     targetLabel = targetLabel ?? "管理員";
     kind = "accounting";
+  } else if (mode === "purchase") {
+    // 採購通知：任何登入老師觸發，通知採購負責人（美君）
+    const { data: buyers } = await admin
+      .from("teachers")
+      .select("id")
+      .eq("is_purchaser", true);
+    targetTeacherIds = (buyers ?? []).map((b) => b.id);
+    title = title || "有新的採購需求 🛒";
+    notifyBody = notifyBody || `${me.name} 提出一筆採購需求，記得看一下 💛`;
+    targetLabel = targetLabel ?? "採購負責人";
+    kind = "purchase";
   } else {
     return json({ error: "未知的 mode" }, 400);
   }

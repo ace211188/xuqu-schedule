@@ -7,6 +7,7 @@ import { AnimatedTitle, Particles } from "./anim";
 import Dashboard from "./Dashboard";
 import Reimbursements from "./Reimbursements";
 import Collections from "./Collections";
+import Purchases from "./Purchases";
 import Ledger from "./Ledger";
 import Monthly from "./Monthly";
 import Settings from "./Settings";
@@ -15,6 +16,7 @@ export type AccountingTab =
   | "dashboard"
   | "reimb"
   | "collect"
+  | "purchase"
   | "ledger"
   | "monthly"
   | "settings";
@@ -25,6 +27,7 @@ const TABS: { key: AccountingTab; label: string; adminOnly?: boolean }[] = [
   { key: "monthly", label: "月結", adminOnly: true },
   { key: "reimb", label: "代墊" },
   { key: "collect", label: "收款" },
+  { key: "purchase", label: "採購" },
   { key: "settings", label: "設定", adminOnly: true },
 ];
 
@@ -42,11 +45,11 @@ export default function AccountingApp({
   onOpenStudents?: () => void;
 }) {
   const [tab, setTab] = useState<AccountingTab>("dashboard");
-  const data = useAccountingData(teacher.is_admin);
+  const data = useAccountingData();
 
-  // 分頁紅點：代墊/收款各自的待辦數
+  // 分頁紅點：代墊/收款/採購各自的待辦數
   const badges = useMemo(() => {
-    const { reimbursements, collections } = data;
+    const { reimbursements, collections, purchases } = data;
     const reimb = teacher.is_admin
       ? reimbursements.filter(
           (r) => r.status === "pending_approval" || r.status === "ready"
@@ -57,8 +60,13 @@ export default function AccountingApp({
     const collect = teacher.is_admin
       ? collections.filter((c) => c.status === "pending_confirm").length
       : 0;
-    return { reimb, collect } as Record<AccountingTab, number>;
-  }, [data, teacher.is_admin]);
+    // 採購紅點：待採購件數，只提醒採購負責人（美君）／管理者
+    const purchase =
+      teacher.is_purchaser || teacher.is_admin
+        ? purchases.filter((p) => p.status === "pending").length
+        : 0;
+    return { reimb, collect, purchase } as Record<AccountingTab, number>;
+  }, [data, teacher.is_admin, teacher.is_purchaser]);
 
   const tabs = TABS.filter((t) => !t.adminOnly || teacher.is_admin);
 
@@ -156,6 +164,7 @@ export default function AccountingApp({
           )}
           {tab === "reimb" && <Reimbursements teacher={teacher} data={data} />}
           {tab === "collect" && <Collections teacher={teacher} data={data} />}
+          {tab === "purchase" && <Purchases teacher={teacher} data={data} />}
           {tab === "settings" && teacher.is_admin && <Settings data={data} />}
         </div>
       )}

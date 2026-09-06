@@ -6,6 +6,7 @@ import { supabase } from "./supabase";
 export type NotificationKind =
   | "manual"
   | "accounting"
+  | "purchase"
   | "reminder"
   | "acc_todo"
   | "monthly"
@@ -27,6 +28,7 @@ export type NotificationLog = {
 export const KIND_LABEL: Record<NotificationKind, string> = {
   manual: "手動發送",
   accounting: "代收代墊即時",
+  purchase: "採購需求即時",
   reminder: "排課提醒",
   acc_todo: "記帳待辦",
   monthly: "月結報表",
@@ -97,6 +99,25 @@ export async function notifyAccountingSubmit(p: {
     });
   } catch {
     // 通知失敗不影響記帳本身，靜默略過（每週 cron 仍會補提醒）
+  }
+}
+
+// ── 採購需求即時通知採購負責人（美君）（best-effort，不擋使用者流程）──
+// who：提出者名字；what：例「白板筆 ×2」
+export async function notifyPurchaseRequest(p: {
+  who: string;
+  what: string;
+}): Promise<void> {
+  try {
+    await supabase.functions.invoke("send-push", {
+      body: {
+        mode: "purchase",
+        title: "有新的採購需求 🛒",
+        body: `${p.who} 想買「${p.what}」，有空時採購一下 💛`,
+      },
+    });
+  } catch {
+    // 通知失敗不影響採購本身，靜默略過
   }
 }
 

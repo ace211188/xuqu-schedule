@@ -41,6 +41,10 @@ const PILL_STYLE: Record<string, string> = {
   已退回: "bg-black/10 text-black/50",
   待確認: "bg-amber-100 text-amber-700",
   已確認入帳: "bg-[#8CA07C]/15 text-[#5f7a4f]",
+  待採購: "bg-amber-100 text-amber-700",
+  已採購: "bg-sky-100 text-sky-700",
+  已到貨: "bg-[#8CA07C]/15 text-[#5f7a4f]",
+  已取消: "bg-black/10 text-black/50",
 };
 
 export function StatusPill({ label }: { label: string }) {
