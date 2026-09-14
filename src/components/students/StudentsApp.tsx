@@ -205,12 +205,16 @@ export default function StudentsApp({
     }
     return m;
   }, [filtered]);
+  // 有輸入搜尋關鍵字時＝不分狀態，直接顯示全部符合者（跨在學/畢業/流失…）
+  const searching = q.trim().length > 0;
   const shown = useMemo(
     () =>
-      statusView === "待追蹤"
+      searching
+        ? filtered
+        : statusView === "待追蹤"
         ? filtered.filter((s) => s.needs_followup)
         : filtered.filter((s) => s.status === statusView),
-    [filtered, statusView]
+    [filtered, statusView, searching]
   );
 
   const editingStudent =
@@ -333,6 +337,8 @@ export default function StudentsApp({
         <div className="rounded-2xl border border-dashed border-black/15 bg-white/50 px-4 py-12 text-center text-sm text-black/40">
           {data.students.length === 0
             ? "還沒有學生。點右上「＋新增學生」開始。"
+            : searching
+            ? `找不到符合「${q.trim()}」的學生。`
             : `目前沒有「${statusView}」的學生。`}
         </div>
       ) : view === "list" ? (
@@ -367,7 +373,7 @@ export default function StudentsApp({
       )}
 
       <p className="mt-4 text-center text-xs text-black/30">
-        {statusView} {shown.length} 位（總名冊 {data.students.length} 位）
+        {searching ? `搜尋結果 ${shown.length}` : `${statusView} ${shown.length}`} 位（總名冊 {data.students.length} 位）
       </p>
       </main>
 
