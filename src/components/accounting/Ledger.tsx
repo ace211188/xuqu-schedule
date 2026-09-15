@@ -13,6 +13,7 @@ import {
   createEntry,
   createTransfer,
   deleteEntry,
+  updateEntry,
   fmtDate,
   fmtMoney,
   todayISO,
@@ -79,6 +80,7 @@ export default function Ledger({
 
   const [q, setQ] = useState("");
   const [modal, setModal] = useState<"entry" | "transfer" | null>(null);
+  const [editing, setEditing] = useState<Entry | null>(null);
   const [openMonths, setOpenMonths] = useState<Set<string>>(new Set());
 
   const catName = useMemo(
@@ -283,6 +285,7 @@ export default function Ledger({
               showAccount={isAll}
               isAdmin={teacher.is_admin}
               onDelete={onDelete}
+              onEdit={setEditing}
             />
           </div>
         )
@@ -329,6 +332,7 @@ export default function Ledger({
                       showAccount={isAll}
                       isAdmin={teacher.is_admin}
                       onDelete={onDelete}
+                      onEdit={setEditing}
                     />
                   </div>
                 )}
@@ -339,7 +343,7 @@ export default function Ledger({
       )}
 
       <p className="text-xs text-black/40">
-        標記「代墊 / 收款 / 轉帳」的列由系統自動產生，需到對應分頁調整；手動記的才能在這裡刪除。
+        標記「代墊 / 收款 / 轉帳」的列由系統自動產生，需到對應分頁調整；手動記的才能在這裡編輯或刪除。
       </p>
 
       {modal === "entry" && (
@@ -369,6 +373,21 @@ export default function Ledger({
           }}
         />
       )}
+      {editing && (
+        <EntryModal
+          teacher={teacher}
+          accounts={accounts.filter((a) => a.active)}
+          categories={categories.filter((c) => c.active)}
+          balances={balances}
+          defaultAccountId={editing.account_id}
+          existing={editing}
+          onClose={() => setEditing(null)}
+          onSaved={async () => {
+            setEditing(null);
+            await refresh();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -385,6 +404,7 @@ const LedgerTable = memo(function LedgerTable({
   showAccount,
   isAdmin,
   onDelete,
+  onEdit,
 }: {
   rows: Row[];
   catName: Map<string, string>;
@@ -392,6 +412,7 @@ const LedgerTable = memo(function LedgerTable({
   showAccount: boolean;
   isAdmin: boolean;
   onDelete: (id: string) => void;
+  onEdit: (e: Entry) => void;
 }) {
   // 只渲染目前螢幕需要的那一套版面（原本手機列表＋桌機表格都畫，DOM 節點多一倍）
   const isMobile = useIsMobile();
@@ -463,13 +484,22 @@ const LedgerTable = memo(function LedgerTable({
                 </div>
               </div>
               {isAdmin && r.source_type === "manual" && (
-                <button
-                  onClick={() => onDelete(r.id)}
-                  className="shrink-0 px-1 text-black/25 hover:text-brand"
-                  title="刪除"
-                >
-                  ✕
-                </button>
+                <div className="flex shrink-0 items-center">
+                  <button
+                    onClick={() => onEdit(r)}
+                    className="px-1 text-black/25 hover:text-navy"
+                    title="編輯"
+                  >
+                    ✎
+                  </button>
+                  <button
+                    onClick={() => onDelete(r.id)}
+                    className="px-1 text-black/25 hover:text-brand"
+                    title="刪除"
+                  >
+                    ✕
+                  </button>
+                </div>
               )}
             </div>
           );
@@ -492,7 +522,7 @@ const LedgerTable = memo(function LedgerTable({
             <th className="px-3 py-2 text-right font-medium">收入</th>
             <th className="px-3 py-2 text-right font-medium">支出</th>
             <th className="px-3 py-2 text-right font-medium">餘額</th>
-            {isAdmin && <th className="w-8 px-1 py-2" />}
+            {isAdmin && <th className="w-14 px-1 py-2" />}
           </tr>
         </thead>
         <tbody>
@@ -532,13 +562,22 @@ const LedgerTable = memo(function LedgerTable({
                 {isAdmin && (
                   <td className="px-1 py-2 text-center">
                     {r.source_type === "manual" && (
-                      <button
-                        onClick={() => onDelete(r.id)}
-                        className="text-black/25 hover:text-brand"
-                        title="刪除"
-                      >
-                        ✕
-                      </button>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => onEdit(r)}
+                          className="text-black/25 hover:text-navy"
+                          title="編輯"
+                        >
+                          ✎
+                        </button>
+                        <button
+                          onClick={() => onDelete(r.id)}
+                          className="text-black/25 hover:text-brand"
+                          title="刪除"
+                        >
+                          ✕
+                        </button>
+                      </div>
                     )}
                   </td>
                 )}
@@ -559,6 +598,7 @@ function EntryModal({
   categories,
   balances,
   defaultAccountId,
+  existing,
   onClose,
   onSaved,
 }: {
@@ -567,20 +607,33 @@ function EntryModal({
   categories: Category[];
   balances: AccountBalance[];
   defaultAccountId: string;
+  existing?: Entry | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [kind, setKind] = useState<"income" | "expense">("expense");
+  const isEdit = !!existing;
+  const [kind, setKind] = useState<"income" | "expense">(
+    existing ? (existing.signed_amount < 0 ? "expense" : "income") : "expense"
+  );
   const [accountId, setAccountId] = useState(
-    defaultAccountId || accounts[0]?.id || ""
+    existing?.account_id || defaultAccountId || accounts[0]?.id || ""
   );
-  const [item, setItem] = useState("");
-  const [amount, setAmount] = useState("");
-  // 預設就選好該收/支別的第一個種類（不用再點）
+  const [item, setItem] = useState(existing?.note ?? "");
+  const [amount, setAmount] = useState(
+    existing ? String(Math.abs(existing.signed_amount)) : ""
+  );
+  // 預設就選好該收/支別的第一個種類（不用再點）；編輯時沿用原類別
   const [categoryId, setCategoryId] = useState(
-    categories.find((c) => c.kind === "expense")?.id ?? ""
+    existing?.category_id ??
+      categories.find(
+        (c) =>
+          c.kind === (existing && existing.signed_amount >= 0 ? "income" : "expense")
+      )?.id ??
+      ""
   );
-  const [occurredOn, setOccurredOn] = useState(todayISO());
+  const [occurredOn, setOccurredOn] = useState(
+    existing?.occurred_on ?? todayISO()
+  );
   const [busy, setBusy] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -594,12 +647,13 @@ function EntryModal({
   const cats = categories.filter((c) => c.kind === kind);
   const amountNum = Number(amount);
 
-  // 目前選的類別是否為「學費」（收入面才觸發同步）
+  // 目前選的類別是否為「學費」（收入面才觸發同步）；編輯既有分錄時不觸發同步，避免重複建繳費
   const isTuition = useMemo(() => {
+    if (isEdit) return false;
     if (kind !== "income") return false;
     const c = categories.find((x) => x.id === categoryId);
     return !!c && c.name.includes("學費");
-  }, [kind, categoryId, categories]);
+  }, [isEdit, kind, categoryId, categories]);
 
   // 進入學費模式才載入學生清單（只需一次）
   useEffect(() => {
@@ -656,6 +710,24 @@ function EntryModal({
     // 學費必須指定學生（查無此生可按「略過同步」）
     if (isTuition && !studentId && !skipStudent)
       return setErr("學費請選擇學生；查無此生可按「略過同步」只記帳");
+    const signed = kind === "expense" ? -amountNum : amountNum;
+
+    // 編輯既有分錄：只更新這筆，不做學生繳費同步
+    if (isEdit && existing) {
+      setBusy(true);
+      const { error } = await updateEntry(existing.id, {
+        accountId,
+        signedAmount: signed,
+        categoryId: categoryId || null,
+        occurredOn,
+        note: item.trim(),
+      });
+      setBusy(false);
+      if (error) return setErr(error);
+      onSaved();
+      return;
+    }
+
     setBusy(true);
     const { error } = await createEntry({
       accountId,
@@ -703,7 +775,7 @@ function EntryModal({
   }
 
   return (
-    <Modal title="記一筆" onClose={onClose}>
+    <Modal title={isEdit ? "編輯這一筆" : "記一筆"} onClose={onClose}>
       <div className="space-y-3">
         <div className="flex gap-2">
           {(["expense", "income"] as const).map((k) => (
@@ -850,7 +922,8 @@ function EntryModal({
           </div>
         )}
 
-        {/* 存檔後餘額試算 */}
+        {/* 存檔後餘額試算（僅新增時顯示；編輯時因原金額已在餘額內，試算會誤導） */}
+        {!isEdit && (
         <div className="rounded-xl bg-black/[0.03] px-3 py-2.5 text-sm">
           <div className="flex items-center justify-between text-black/55">
             <span>目前餘額</span>
@@ -882,15 +955,18 @@ function EntryModal({
             </span>
           </div>
         </div>
+        )}
 
         {err && <p className="text-sm text-brand">{err}</p>}
         {savedFlash && (
           <p className="acc-reveal text-sm text-[#5f7a4f]">✓ 已記一筆，繼續～</p>
         )}
         <div className="flex justify-end gap-2 pt-1">
-          <GhostBtn onClick={() => save(true)} disabled={busy}>
-            存並再記一筆
-          </GhostBtn>
+          {!isEdit && (
+            <GhostBtn onClick={() => save(true)} disabled={busy}>
+              存並再記一筆
+            </GhostBtn>
+          )}
           <PrimaryBtn onClick={() => save(false)} disabled={busy}>
             {busy ? "儲存中…" : "儲存"}
           </PrimaryBtn>

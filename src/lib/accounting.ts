@@ -578,6 +578,30 @@ export async function createEntry(p: {
   return { error: error?.message ?? null };
 }
 
+// 編輯一筆手動分錄（僅管理者；代墊/收款/轉帳產生的分錄不從這裡改）
+export async function updateEntry(
+  id: string,
+  p: {
+    accountId: string;
+    signedAmount: number;
+    categoryId: string | null;
+    occurredOn: string;
+    note: string;
+  }
+): Promise<Res> {
+  const { error } = await supabase
+    .from("acc_entries")
+    .update({
+      account_id: p.accountId,
+      signed_amount: p.signedAmount,
+      category_id: p.categoryId,
+      occurred_on: p.occurredOn,
+      note: p.note || null,
+    })
+    .eq("id", id);
+  return { error: error?.message ?? null };
+}
+
 // 刪除一筆手動分錄（代墊/收款產生的分錄不從這裡刪，交由來源單處理）
 export async function deleteEntry(id: string): Promise<Res> {
   const { error } = await supabase.from("acc_entries").delete().eq("id", id);

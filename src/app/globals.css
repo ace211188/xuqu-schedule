@@ -460,3 +460,34 @@ body {
     transition: none;
   }
 }
+
+/* ── 發薪簽收單列印 ──────────────────────────────
+   螢幕上隱藏列印專用副本；列印時只顯示 #payroll-print 這塊、其餘全部藏起來。 */
+.payroll-print-root {
+  display: none;
+}
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .payroll-print-root {
+    display: block;
+  }
+  #payroll-print,
+  #payroll-print * {
+    visibility: visible;
+  }
+  #payroll-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+  }
+  /* 第二頁另起一張 A4 */
+  .payroll-page-break {
+    break-before: page;
+  }
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+}
