@@ -82,6 +82,7 @@ export type Collection = {
   description: string;
   occurred_on: string;
   held_account_id: string | null;
+  student_id: string | null; // 學費可綁學生（連到學生名冊，選填）
   change_given: number; // 找零金額（0＝沒找零），確認入帳時從零用金扣
   change_account_id: string | null; // 找零從哪個帳戶出（零用金）
   status: CollectionStatus;
@@ -400,6 +401,8 @@ export async function createCollection(p: {
   description: string;
   occurredOn: string;
   receiptPaths: string[];
+  heldAccountId?: string | null; // 建立時就選「錢先放哪個帳戶」
+  studentId?: string | null; // 學費可綁學生（選填）
   changeGiven?: number;
   changeAccountId?: string | null;
 }): Promise<Res> {
@@ -410,6 +413,8 @@ export async function createCollection(p: {
     description: p.description,
     occurred_on: p.occurredOn,
     receipt_paths: p.receiptPaths,
+    held_account_id: p.heldAccountId ?? null,
+    student_id: p.studentId ?? null,
     change_given: p.changeGiven ?? 0,
     change_account_id: p.changeAccountId ?? null,
   });
@@ -429,6 +434,7 @@ export async function updateCollection(
       | "status"
       | "reject_reason"
       | "held_account_id"
+      | "student_id"
       | "change_given"
       | "change_account_id"
     >

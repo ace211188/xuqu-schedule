@@ -651,7 +651,7 @@ function EditBody({
       </div>
 
       {/* 狀態 */}
-      <Field label="狀態" hint={isNew ? "" : "(可切換暫停/畢業/流失/復課)"}>
+      <Field label="狀態" hint={isNew ? "" : "(可切換暫停/畢業/養客/復課)"}>
         <Select
           value={form.status}
           onChange={(v) => set("status", v as StudentStatus)}

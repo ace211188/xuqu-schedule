@@ -8,9 +8,11 @@ import { updateFixedOverhead, type ProfitResult } from "@/lib/profit";
 export default function ProfitPanel({
   profit,
   onRefresh,
+  canEdit = true,
 }: {
   profit: ProfitResult;
   onRefresh: () => void;
+  canEdit?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [editingOverhead, setEditingOverhead] = useState(false);
@@ -72,7 +74,11 @@ export default function ProfitPanel({
           >
             <span className="flex items-center gap-2">
               固定開銷目標
-              {editingOverhead ? (
+              {!canEdit ? (
+                <span className="font-semibold">
+                  {fmtMoney(profit.fixedOverhead)}
+                </span>
+              ) : editingOverhead ? (
                 <>
                   <input
                     type="number"
@@ -157,7 +163,7 @@ export default function ProfitPanel({
           )}
 
           <p className="text-[11px] text-black/35">
-            月營收＝每期學費÷週期（雙月÷2、年繳÷12）；成本＝個別每堂鐘點×4＋班別團班每堂×4。僅管理員可見。
+            月營收＝每期學費÷週期（雙月÷2、年繳÷12）；成本＝個別每堂鐘點×4＋班別團班每堂×4。屬敏感資訊，僅開放指定人員檢視。
           </p>
         </div>
       )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Teacher } from "@/lib/useAuth";
 import {
   COLLECTION_STATUS_LABEL,
@@ -14,6 +14,7 @@ import {
   type Category,
   type Collection,
 } from "@/lib/accounting";
+import { fetchStudents, type Student } from "@/lib/students";
 import type { AccountingData } from "./useAccountingData";
 import {
   Card,
@@ -23,6 +24,7 @@ import {
   Modal,
   Money,
   PrimaryBtn,
+  Select,
   StatusPill,
   WeekGroups,
   inputCls,
@@ -48,6 +50,16 @@ export default function Collections({
   const [formFor, setFormFor] = useState<Collection | "new" | null>(null);
   const [reject, setReject] = useState<Collection | null>(null);
   const [confirmFor, setConfirmFor] = useState<Collection | null>(null);
+
+  // 學生名冊（學費綁學生用；一次載入，卡片顯示與表單挑選共用）
+  const [students, setStudents] = useState<Student[]>([]);
+  useEffect(() => {
+    fetchStudents().then(setStudents);
+  }, []);
+  const studentName = useMemo(
+    () => new Map(students.map((s) => [s.id, s.nickname ? `${s.name}（${s.nickname}）` : s.name])),
+    [students]
+  );
 
   const incomeCats = useMemo(
     () => categories.filter((c) => c.kind === "income" && c.active),
@@ -100,6 +112,7 @@ export default function Collections({
               teacher={teacher}
               catName={catName}
               acctName={acctName}
+              studentName={studentName}
               collectorName={
                 teacher.is_admin
                   ? teacherNames.get(c.collector_id) ?? "—"
@@ -137,6 +150,8 @@ export default function Collections({
           teacher={teacher}
           existing={formFor === "new" ? null : formFor}
           categories={incomeCats}
+          accounts={heldAccounts}
+          students={students}
           pettyAccount={pettyAccount}
           onClose={() => setFormFor(null)}
           onSaved={async () => {
@@ -167,6 +182,7 @@ export default function Collections({
         <ConfirmModal
           accounts={heldAccounts}
           amount={confirmFor.amount}
+          defaultAccountId={confirmFor.held_account_id}
           onClose={() => setConfirmFor(null)}
           onConfirm={async (accountId) => {
             const { error } = await updateCollection(confirmFor.id, {
@@ -190,6 +206,7 @@ function CollectionCard({
   teacher,
   catName,
   acctName,
+  studentName,
   collectorName,
   onEdit,
   onDelete,
@@ -201,6 +218,7 @@ function CollectionCard({
   teacher: Teacher;
   catName: Map<string, string>;
   acctName: Map<string, string>;
+  studentName: Map<string, string>;
   collectorName: string;
   onEdit: () => void;
   onDelete: () => void;
@@ -225,8 +243,14 @@ function CollectionCard({
             {admin && <span>收款人：{collectorName}</span>}
             <span>日期：{fmtDate(c.occurred_on)}</span>
             {c.category_id && <span>類別：{catName.get(c.category_id)}</span>}
-            {c.status === "confirmed" && c.held_account_id && (
-              <span>入「{acctName.get(c.held_account_id) ?? "—"}」</span>
+            {c.student_id && (
+              <span>學生：{studentName.get(c.student_id) ?? "—"}</span>
+            )}
+            {c.held_account_id && (
+              <span>
+                {c.status === "confirmed" ? "入" : "放"}「
+                {acctName.get(c.held_account_id) ?? "—"}」
+              </span>
             )}
             {c.change_given > 0 && (
               <span className="text-brand">
@@ -289,6 +313,8 @@ function CollectionForm({
   teacher,
   existing,
   categories,
+  accounts,
+  students,
   pettyAccount,
   onClose,
   onSaved,
@@ -296,10 +322,16 @@ function CollectionForm({
   teacher: Teacher;
   existing: Collection | null;
   categories: Category[];
+  accounts: Account[];
+  students: Student[];
   pettyAccount: Account | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const mainAccountId = useMemo(
+    () => accounts.find((a) => a.is_main)?.id ?? accounts[0]?.id ?? "",
+    [accounts]
+  );
   const [amount, setAmount] = useState(existing ? String(existing.amount) : "");
   const [categoryId, setCategoryId] = useState<string>(
     existing?.category_id ?? categories[0]?.id ?? ""
@@ -308,6 +340,13 @@ function CollectionForm({
   const [occurredOn, setOccurredOn] = useState(
     existing?.occurred_on ?? todayISO()
   );
+  // 建立時就選「錢先放哪個帳戶」（預設主帳戶；管理者確認入帳時仍可調整）
+  const [heldAccountId, setHeldAccountId] = useState<string>(
+    existing?.held_account_id ?? mainAccountId
+  );
+  // 學費綁學生（選填）
+  const [studentId, setStudentId] = useState<string>(existing?.student_id ?? "");
+  const [studentSearch, setStudentSearch] = useState("");
   const [paths, setPaths] = useState<string[]>(existing?.receipt_paths ?? []);
   // 找零：勾選有無找錢 + 找多少
   const [hasChange, setHasChange] = useState(
@@ -323,6 +362,36 @@ function CollectionForm({
   const changeNum = hasChange ? Number(change) : 0;
   const net = amountNum - changeNum; // 淨額（實收 − 找零）= 真正的學費
 
+  // 類別是「學費」才顯示學生選擇（選填）
+  const isTuition = useMemo(() => {
+    const c = categories.find((x) => x.id === categoryId);
+    return !!c && c.name.includes("學費");
+  }, [categories, categoryId]);
+  const selectedStudent = students.find((s) => s.id === studentId) ?? null;
+
+  // 打「收款說明」時自動比對學生（尚未手選時才帶入）
+  useEffect(() => {
+    if (!isTuition || studentId || students.length === 0) return;
+    const text = description.trim();
+    if (!text) return;
+    const hit = students.find((s) => {
+      const nm = s.name?.trim();
+      const nick = s.nickname?.trim();
+      return (nm && text.includes(nm)) || (nick && text.includes(nick));
+    });
+    if (hit) setStudentId(hit.id);
+  }, [description, isTuition, students, studentId]);
+
+  const studentMatches = useMemo(() => {
+    const kw = studentSearch.trim();
+    const base = kw
+      ? students.filter(
+          (s) => (s.name ?? "").includes(kw) || (s.nickname ?? "").includes(kw)
+        )
+      : students;
+    return base.slice(0, 8);
+  }, [students, studentSearch]);
+
   async function save() {
     setErr(null);
     if (!description.trim()) return setErr("請填寫收款說明");
@@ -337,6 +406,8 @@ function CollectionForm({
     setBusy(true);
     const changeGiven = hasChange ? changeNum : 0;
     const changeAccountId = hasChange ? pettyAccount?.id ?? null : null;
+    // 學生僅在「學費」時才綁定；換類別後不殘留
+    const linkedStudentId = isTuition ? studentId || null : null;
     let res;
     if (!existing) {
       res = await createCollection({
@@ -346,6 +417,8 @@ function CollectionForm({
         description: description.trim(),
         occurredOn,
         receiptPaths: paths,
+        heldAccountId: heldAccountId || null,
+        studentId: linkedStudentId,
         changeGiven,
         changeAccountId,
       });
@@ -363,6 +436,8 @@ function CollectionForm({
         description: description.trim(),
         occurred_on: occurredOn,
         receipt_paths: paths,
+        held_account_id: heldAccountId || null,
+        student_id: linkedStudentId,
         change_given: changeGiven,
         change_account_id: changeAccountId,
       };
@@ -471,6 +546,17 @@ function CollectionForm({
             </div>
           )}
         </div>
+        <Field label="錢先放哪個帳戶" hint="（確認入帳時仍可調整）">
+          <Select
+            value={heldAccountId}
+            onChange={setHeldAccountId}
+            placeholder="請選擇帳戶"
+            options={accounts.map((a) => ({
+              value: a.id,
+              label: a.name + (a.is_main ? "（主）" : ""),
+            }))}
+          />
+        </Field>
         <Field label="類別">
           <select
             className={inputCls}
@@ -485,6 +571,63 @@ function CollectionForm({
             ))}
           </select>
         </Field>
+
+        {/* 學費 → 可綁學生（選填）*/}
+        {isTuition && (
+          <div className="space-y-2 rounded-xl border border-[#8CA07C]/40 bg-[#8CA07C]/5 px-3 py-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-[#5f7a4f]">
+                🎓 對應學生
+                <span className="ml-1 font-normal text-black/40">（選填）</span>
+              </span>
+              {selectedStudent && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStudentId("");
+                    setStudentSearch("");
+                  }}
+                  className="text-xs text-black/45 hover:text-navy"
+                >
+                  更換
+                </button>
+              )}
+            </div>
+
+            {selectedStudent ? (
+              <span className="inline-block rounded-full border border-[#8CA07C]/40 bg-white px-2.5 py-1 text-sm font-medium text-navy">
+                {selectedStudent.name}
+                {selectedStudent.nickname ? `（${selectedStudent.nickname}）` : ""}
+              </span>
+            ) : (
+              <div className="space-y-1.5">
+                <input
+                  className={inputCls}
+                  value={studentSearch}
+                  onChange={(e) => setStudentSearch(e.target.value)}
+                  placeholder="🔍 搜尋學生姓名／暱稱（打說明也會自動比對）"
+                />
+                <div className="flex flex-wrap gap-1.5">
+                  {studentMatches.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => setStudentId(s.id)}
+                      className="rounded-full border border-black/15 px-2.5 py-1 text-xs text-black/60 transition hover:border-navy hover:text-navy"
+                    >
+                      {s.name}
+                      {s.nickname ? `·${s.nickname}` : ""}
+                    </button>
+                  ))}
+                  {students.length > 0 && studentMatches.length === 0 && (
+                    <span className="text-xs text-black/40">查無符合的學生</span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <Field label="收據 / 憑證">
           <ReceiptInput teacherId={teacher.id} paths={paths} onChange={setPaths} />
         </Field>
@@ -504,15 +647,19 @@ function CollectionForm({
 function ConfirmModal({
   accounts,
   amount,
+  defaultAccountId,
   onClose,
   onConfirm,
 }: {
   accounts: Account[];
   amount: number;
+  defaultAccountId: string | null;
   onClose: () => void;
   onConfirm: (accountId: string) => void;
 }) {
-  const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
+  const [accountId, setAccountId] = useState(
+    defaultAccountId || accounts[0]?.id || ""
+  );
   return (
     <Modal title="確認入帳" onClose={onClose}>
       <div className="space-y-3">

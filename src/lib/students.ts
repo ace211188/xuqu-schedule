@@ -4,7 +4,7 @@ import { supabase } from "./supabase";
 
 // ── 狀態 ─────────────────────────────────────────────
 // 招生鏈（依序，可一鍵推進）＋ 側狀態（手動切換，不在推進鏈上）
-// 側狀態沿用紙本用語：暫停 / 畢業 / 流失
+// 側狀態沿用紙本用語：暫停 / 畢業 / 養客
 export type StudentStatus =
   | "完成免費測驗"
   | "完成試上"
@@ -12,7 +12,7 @@ export type StudentStatus =
   | "在學"
   | "暫停"
   | "畢業"
-  | "流失";
+  | "養客";
 
 // 自動推進的順序（免費測驗→付定金→試上→在學）
 export const STATUS_CHAIN: StudentStatus[] = [
@@ -23,7 +23,7 @@ export const STATUS_CHAIN: StudentStatus[] = [
 ];
 
 // 側狀態（不在自動推進鏈上，手動切換）
-export const SIDE_STATUS: StudentStatus[] = ["暫停", "畢業", "流失"];
+export const SIDE_STATUS: StudentStatus[] = ["暫停", "畢業", "養客"];
 
 // 下拉用的全部狀態
 export const ALL_STATUS: StudentStatus[] = [...STATUS_CHAIN, ...SIDE_STATUS];
@@ -36,7 +36,7 @@ export const STATUS_TONE: Record<StudentStatus, string> = {
   在學: "bg-[#8CA07C]/15 text-[#5f7a4f]",
   暫停: "bg-orange-100 text-orange-600",
   畢業: "bg-indigo-100 text-indigo-600",
-  流失: "bg-black/10 text-black/45",
+  養客: "bg-black/10 text-black/45",
 };
 
 // 目前狀態的「下一階段」（只在自動推進鏈上有意義；到頂或側狀態回傳 null）

@@ -12,6 +12,7 @@ export type Teacher = {
   can_students: boolean;
   can_schedule_admin: boolean;
   is_purchaser: boolean;
+  can_view_profit: boolean;
 };
 
 const EMAIL_DOMAIN = "xuqu.tw";
@@ -22,14 +23,26 @@ export function useAuth() {
   const [teacher, setTeacher] = useState<Teacher | null>(null);
 
   const loadTeacher = useCallback(async (uid: string) => {
+    // 用 select("*") 而非列舉欄位：新欄位（如 can_view_profit）SQL 還沒跑時也不會整個查詢報錯、害人登不進來
     const { data } = await supabase
       .from("teachers")
-      .select(
-        "id,name,is_admin,can_accounting,can_students,can_schedule_admin,is_purchaser"
-      )
+      .select("*")
       .eq("id", uid)
       .single();
-    setTeacher(data ?? null);
+    setTeacher(
+      data
+        ? {
+            id: data.id,
+            name: data.name,
+            is_admin: !!data.is_admin,
+            can_accounting: !!data.can_accounting,
+            can_students: !!data.can_students,
+            can_schedule_admin: !!data.can_schedule_admin,
+            is_purchaser: !!data.is_purchaser,
+            can_view_profit: !!data.can_view_profit,
+          }
+        : null
+    );
   }, []);
 
   useEffect(() => {

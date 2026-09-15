@@ -46,7 +46,7 @@ const RAIL_ICON: Record<RailView, ComponentType<IconProps>> = {
   待追蹤: IconFlag,
   暫停: IconPlayerPause,
   畢業: IconAward,
-  流失: IconUserX,
+  養客: IconUserX,
 };
 
 // 左側直條順序：在學置頂另處理；其餘依此排（待追蹤在暫停上方）
@@ -57,7 +57,7 @@ const RAIL_ORDER: RailView[] = [
   "待追蹤",
   "暫停",
   "畢業",
-  "流失",
+  "養客",
 ];
 
 type FeeRecords = ReturnType<typeof useStudentsData>["feeRecords"];
@@ -115,6 +115,8 @@ export default function StudentsApp({
 }) {
   const data = useStudentsData();
   const isAdmin = teacher.is_admin;
+  // 毛利：管理者可看可改；被開放檢視者（如奕寬）可看不可改
+  const canViewProfit = teacher.is_admin || teacher.can_view_profit;
   const [q, setQ] = useState("");
   const [fCourse, setFCourse] = useState<string>("");
   const [fTeacher, setFTeacher] = useState<string>("");
@@ -141,19 +143,19 @@ export default function StudentsApp({
     [classSize]
   );
 
-  // 毛利（僅管理員）
+  // 毛利（管理員或被開放檢視者）
   const [overhead, setOverhead] = useState(80000);
   useEffect(() => {
-    if (isAdmin) fetchFixedOverhead().then(setOverhead);
-  }, [isAdmin]);
+    if (canViewProfit) fetchFixedOverhead().then(setOverhead);
+  }, [canViewProfit]);
   const profit = useMemo<ProfitResult | null>(() => {
-    if (!isAdmin) return null;
+    if (!canViewProfit) return null;
     return computeProfit({
       students: data.students,
       classCosts: data.classCosts,
       fixedOverhead: overhead,
     });
-  }, [isAdmin, data.students, data.classCosts, overhead]);
+  }, [canViewProfit, data.students, data.classCosts, overhead]);
   const refreshProfit = useCallback(async () => {
     setOverhead(await fetchFixedOverhead());
     await data.refresh();
@@ -205,7 +207,7 @@ export default function StudentsApp({
     }
     return m;
   }, [filtered]);
-  // 有輸入搜尋關鍵字時＝不分狀態，直接顯示全部符合者（跨在學/畢業/流失…）
+  // 有輸入搜尋關鍵字時＝不分狀態，直接顯示全部符合者（跨在學/畢業/養客…）
   const searching = q.trim().length > 0;
   const shown = useMemo(
     () =>
@@ -275,10 +277,13 @@ export default function StudentsApp({
         </div>
       </header>
 
-      {/* 毛利面板（僅管理員，可收合） */}
-      {isAdmin && profit && (
-        <ProfitPanel profit={profit} onRefresh={refreshProfit} />
+      {/* 毛利面板（管理員或被開放檢視者，可收合；非管理員唯讀） */}
+      {canViewProfit && profit && (
+        <ProfitPanel profit={profit} canEdit={isAdmin} onRefresh={refreshProfit} />
       )}
+
+      {/* 當月壽星（所有能看學生資料的人，預設收合） */}
+      <BirthdayPanel students={data.students} />
 
       {/* 搜尋 + 新增 */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -779,6 +784,84 @@ function StudentRow({
         </p>
       )}
     </button>
+  );
+}
+
+// 生日欄是自由文字（多為民國 Y/M/D，也可能被誤填備註）。
+// 只認「數字開頭」的日期，抓出月/日；抓不到就回 null（不列入壽星）。
+function birthdayMD(raw: string | null): { month: number; day: number } | null {
+  const s = (raw ?? "").trim();
+  const m = s.match(
+    /^(?:民國\s*)?\d{2,4}\s*[./\-年]\s*(\d{1,2})(?:\s*[./\-月]\s*(\d{1,2}))?/
+  );
+  if (!m) return null;
+  const month = Number(m[1]);
+  const day = m[2] ? Number(m[2]) : 0;
+  if (month < 1 || month > 12) return null;
+  return { month, day };
+}
+
+// ── 當月壽星（預設收合；只看在學學生）──
+function BirthdayPanel({ students }: { students: Student[] }) {
+  const [open, setOpen] = useState(false);
+  const month = new Date().getMonth() + 1;
+  const list = useMemo(
+    () =>
+      students
+        .filter((s) => s.status === "在學")
+        .map((s) => ({ s, md: birthdayMD(s.birthday) }))
+        .filter((x): x is { s: Student; md: { month: number; day: number } } =>
+          x.md !== null && x.md.month === month
+        )
+        .sort((a, b) => (a.md.day || 99) - (b.md.day || 99)),
+    [students, month]
+  );
+
+  return (
+    <div className="mb-4 rounded-2xl border border-brand/15 bg-white shadow-sm">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left"
+      >
+        <span className="text-sm font-semibold text-navy">
+          🎂 當月壽星（{month} 月）
+        </span>
+        <span className="ml-1 rounded-full bg-brand/10 px-2 py-0.5 text-xs font-medium text-brand">
+          {list.length} 位
+        </span>
+        <span className="ml-auto text-black/40">{open ? "▲ 收合" : "▼ 展開"}</span>
+      </button>
+      {open && (
+        <div className="border-t border-black/5 px-4 pb-4 pt-3">
+          {list.length === 0 ? (
+            <p className="rounded-xl bg-black/[0.02] px-3 py-3 text-center text-xs text-black/40">
+              這個月沒有壽星（或生日欄未填）。
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {list.map(({ s, md }) => (
+                <span
+                  key={s.id}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-black/[0.02] px-3 py-1.5 text-sm"
+                >
+                  <span className="font-medium text-navy">
+                    {s.name}
+                    {s.nickname && (
+                      <span className="font-normal text-black/40">
+                        （{s.nickname}）
+                      </span>
+                    )}
+                  </span>
+                  <span className="tabular-nums text-brand">
+                    {md.month}/{md.day || "?"}
+                  </span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

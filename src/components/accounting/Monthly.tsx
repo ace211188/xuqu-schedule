@@ -157,14 +157,24 @@ export default function Monthly({
             </Reveal>
           </div>
 
-          {/* 分類明細 */}
+          {/* 分類明細（點類別可展開該類別的每一筆，支援日期/金額正倒序）*/}
           <section>
             <SectionTitle>支出分類</SectionTitle>
-            <CatBars rows={byCat.exp} tone="brand" />
+            <CatBars
+              rows={byCat.exp}
+              tone="brand"
+              entries={flowEntries}
+              catName={catName}
+            />
           </section>
           <section>
             <SectionTitle>收入分類</SectionTitle>
-            <CatBars rows={byCat.inc} tone="ok" />
+            <CatBars
+              rows={byCat.inc}
+              tone="ok"
+              entries={flowEntries}
+              catName={catName}
+            />
           </section>
 
           {/* 期末餘額 */}
@@ -197,39 +207,191 @@ export default function Monthly({
   );
 }
 
+function shortDate(iso: string) {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+type SortKey = "date" | "amount";
+type SortDir = "asc" | "desc";
+
 function CatBars({
   rows,
   tone,
+  entries,
+  catName,
 }: {
   rows: { id: string; name: string; amt: number }[];
   tone: "brand" | "ok";
+  entries: Entry[];
+  catName: Map<string, string>;
 }) {
+  const [openId, setOpenId] = useState<string | null>(null);
+  // 每個類別展開時各自記住排序方式；預設日期新→舊
+  const [sortKey, setSortKey] = useState<SortKey>("date");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
   const max = Math.max(1, ...rows.map((r) => r.amt));
   const color = tone === "brand" ? "bg-brand/70" : "bg-[#8CA07C]";
   const text = tone === "brand" ? "text-brand" : "text-[#5f7a4f]";
+  const wantSign = tone === "brand" ? -1 : 1; // 支出取負、收入取正
+
+  function toggle(id: string) {
+    setOpenId((cur) => (cur === id ? null : id));
+    setSortKey("date");
+    setSortDir("desc");
+  }
+
   if (rows.length === 0)
     return <p className="px-1 text-sm text-black/35">本月無</p>;
+
   return (
     <div className="space-y-1.5">
-      {rows.map((r, i) => (
-        <div key={r.id} className="flex items-center gap-2">
-          <span className="w-24 shrink-0 truncate text-sm text-black/60">
-            {r.name}
-          </span>
-          <div className="h-4 flex-1 overflow-hidden rounded-full bg-black/[0.04]">
-            <div
-              className={`acc-bar h-full rounded-full ${color}`}
-              style={{
-                width: `${(r.amt / max) * 100}%`,
-                animationDelay: `${Math.min(i, 8) * 50}ms`,
-              }}
-            />
+      {rows.map((r, i) => {
+        const open = openId === r.id;
+        // 該類別本月的每一筆（依收/支別過濾；未分類的 id 為 __none__）
+        const items = open
+          ? entries
+              .filter(
+                (e) =>
+                  (e.category_id ?? "__none__") === r.id &&
+                  Math.sign(e.signed_amount) === wantSign
+              )
+              .sort((a, b) => {
+                const d =
+                  sortKey === "amount"
+                    ? Math.abs(a.signed_amount) - Math.abs(b.signed_amount)
+                    : a.occurred_on.localeCompare(b.occurred_on);
+                return sortDir === "asc" ? d : -d;
+              })
+          : [];
+        return (
+          <div key={r.id}>
+            {/* 類別列（點擊展開/收合）*/}
+            <button
+              onClick={() => toggle(r.id)}
+              className="flex w-full items-center gap-2 text-left"
+            >
+              <span className="flex w-24 shrink-0 items-center gap-1 truncate text-sm text-black/60">
+                <span
+                  className={`text-[10px] text-black/30 transition-transform ${
+                    open ? "rotate-90" : ""
+                  }`}
+                >
+                  ▶
+                </span>
+                <span className="truncate">{r.name}</span>
+              </span>
+              <div className="h-4 flex-1 overflow-hidden rounded-full bg-black/[0.04]">
+                <div
+                  className={`acc-bar h-full rounded-full ${color}`}
+                  style={{
+                    width: `${(r.amt / max) * 100}%`,
+                    animationDelay: `${Math.min(i, 8) * 50}ms`,
+                  }}
+                />
+              </div>
+              <span
+                className={`w-20 shrink-0 text-right text-sm tabular-nums ${text}`}
+              >
+                {fmtMoney(r.amt)}
+              </span>
+            </button>
+
+            {/* 展開：該類別逐筆明細 + 排序切換 */}
+            {open && (
+              <div className="mt-1.5 rounded-xl border border-black/8 bg-black/[0.015] p-2">
+                <div className="mb-1 flex items-center gap-1.5 px-1">
+                  <span className="mr-auto text-[11px] text-black/40">
+                    {items.length} 筆
+                  </span>
+                  <SortBtn
+                    active={sortKey === "date"}
+                    dir={sortDir}
+                    onClick={() => {
+                      if (sortKey === "date")
+                        setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+                      else {
+                        setSortKey("date");
+                        setSortDir("desc");
+                      }
+                    }}
+                  >
+                    日期
+                  </SortBtn>
+                  <SortBtn
+                    active={sortKey === "amount"}
+                    dir={sortDir}
+                    onClick={() => {
+                      if (sortKey === "amount")
+                        setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+                      else {
+                        setSortKey("amount");
+                        setSortDir("desc");
+                      }
+                    }}
+                  >
+                    金額
+                  </SortBtn>
+                </div>
+                {items.length === 0 ? (
+                  <p className="px-1 py-1 text-xs text-black/35">本月無</p>
+                ) : (
+                  <div className="divide-y divide-black/5">
+                    {items.map((e) => (
+                      <div
+                        key={e.id}
+                        className="flex items-center gap-2 px-1 py-1.5 text-sm"
+                      >
+                        <span className="w-9 shrink-0 text-[11px] text-black/45">
+                          {shortDate(e.occurred_on)}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-black/70">
+                          {e.note ||
+                            (e.category_id
+                              ? catName.get(e.category_id)
+                              : "—")}
+                        </span>
+                        <span
+                          className={`shrink-0 tabular-nums ${text}`}
+                        >
+                          {fmtMoney(Math.abs(e.signed_amount))}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-          <span className={`w-20 shrink-0 text-right text-sm tabular-nums ${text}`}>
-            {fmtMoney(r.amt)}
-          </span>
-        </div>
-      ))}
+        );
+      })}
     </div>
+  );
+}
+
+function SortBtn({
+  active,
+  dir,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  dir: SortDir;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition ${
+        active
+          ? "bg-navy text-white"
+          : "bg-white text-black/50 hover:text-navy"
+      }`}
+    >
+      {children}
+      {active && (dir === "asc" ? " ↑" : " ↓")}
+    </button>
   );
 }

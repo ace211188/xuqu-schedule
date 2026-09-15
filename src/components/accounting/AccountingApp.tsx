@@ -23,8 +23,8 @@ export type AccountingTab =
 
 const TABS: { key: AccountingTab; label: string; adminOnly?: boolean }[] = [
   { key: "dashboard", label: "彙總" },
-  { key: "ledger", label: "流水帳", adminOnly: true },
-  { key: "monthly", label: "月結", adminOnly: true },
+  { key: "ledger", label: "流水帳" },
+  { key: "monthly", label: "月結" },
   { key: "reimb", label: "代墊" },
   { key: "collect", label: "收款" },
   { key: "purchase", label: "採購" },
@@ -156,12 +156,8 @@ export default function AccountingApp({
           {tab === "dashboard" && (
             <Dashboard teacher={teacher} data={data} onNavigate={setTab} />
           )}
-          {tab === "ledger" && teacher.is_admin && (
-            <Ledger teacher={teacher} data={data} />
-          )}
-          {tab === "monthly" && teacher.is_admin && (
-            <Monthly teacher={teacher} data={data} />
-          )}
+          {tab === "ledger" && <Ledger teacher={teacher} data={data} />}
+          {tab === "monthly" && <Monthly teacher={teacher} data={data} />}
           {tab === "reimb" && <Reimbursements teacher={teacher} data={data} />}
           {tab === "collect" && <Collections teacher={teacher} data={data} />}
           {tab === "purchase" && <Purchases teacher={teacher} data={data} />}

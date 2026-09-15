@@ -96,7 +96,7 @@ export function Field({
   hint?: string;
 }) {
   return (
-    <label className="block">
+    <label className="block min-w-0">
       <span className="mb-1 block text-sm font-medium text-black/70">
         {label}
         {hint && <span className="ml-1 font-normal text-black/40">{hint}</span>}
@@ -106,8 +106,10 @@ export function Field({
   );
 }
 
+// min-w-0：讓 input（尤其 type=date 有固有寬度）在 grid/flex 欄位內能縮小，
+// 手機窄螢幕才不會把整個表單撐出畫面外。
 export const inputCls =
-  "w-full rounded-xl border border-black/15 bg-white px-3 py-2 text-sm outline-none focus:border-navy focus:ring-2 focus:ring-navy/20";
+  "w-full min-w-0 rounded-xl border border-black/15 bg-white px-3 py-2 text-sm outline-none focus:border-navy focus:ring-2 focus:ring-navy/20";
 
 export function PrimaryBtn({
   children,
