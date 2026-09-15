@@ -13,6 +13,7 @@ export type Teacher = {
   can_schedule_admin: boolean;
   is_purchaser: boolean;
   can_view_profit: boolean;
+  can_delete_students: boolean;
 };
 
 const EMAIL_DOMAIN = "xuqu.tw";
@@ -40,6 +41,7 @@ export function useAuth() {
             can_schedule_admin: !!data.can_schedule_admin,
             is_purchaser: !!data.is_purchaser,
             can_view_profit: !!data.can_view_profit,
+            can_delete_students: !!data.can_delete_students,
           }
         : null
     );

@@ -339,6 +339,8 @@ export default function StudentCard({
             form={form}
             set={set}
             isNew={isNew}
+            allStudents={allStudents}
+            selfId={student?.id ?? null}
             referrerOptions={referrerOptions}
             isGroupClass={isGroupClass}
             classHeadcount={classHeadcount}
@@ -372,7 +374,7 @@ export default function StudentCard({
             <GhostBtn onClick={isNew ? onClose : () => setEditing(false)}>
               取消
             </GhostBtn>
-            {!isNew && teacher.is_admin && (
+            {!isNew && (teacher.is_admin || teacher.can_delete_students) && (
               <div className="ml-auto">
                 <GhostBtn tone="danger" onClick={handleDelete} disabled={busy}>
                   刪除
@@ -492,11 +494,122 @@ function ViewBody({
   );
 }
 
+// ── 建立/編輯時：勾選兄弟姊妹是學員 → 一鍵帶入家長聯絡資料（免重打）──
+// 家庭＝共用主家長姓名＋電話，帶入後系統會自動歸為同一家庭。
+function SiblingFill({
+  allStudents,
+  selfId,
+  currentName,
+  onFill,
+}: {
+  allStudents: Student[];
+  selfId: string | null;
+  currentName: string;
+  onFill: (s: Student) => void;
+}) {
+  const [on, setOn] = useState(false);
+  const [q, setQ] = useState("");
+  const [pickedId, setPickedId] = useState<string | null>(null);
+
+  const surname = (currentName ?? "").trim().charAt(0);
+  const picked = allStudents.find((s) => s.id === pickedId) ?? null;
+
+  // 預設跳出「同姓」學員；有打字則不分姓搜尋姓名／暱稱
+  const options = useMemo(() => {
+    const kw = q.trim();
+    let list = allStudents.filter((s) => s.id !== selfId);
+    if (kw) {
+      list = list.filter(
+        (s) => (s.name ?? "").includes(kw) || (s.nickname ?? "").includes(kw)
+      );
+    } else if (surname) {
+      list = list.filter((s) => (s.name ?? "").charAt(0) === surname);
+    } else {
+      list = [];
+    }
+    return list.slice(0, 12);
+  }, [allStudents, selfId, q, surname]);
+
+  return (
+    <div className="rounded-xl border border-[#8CA07C]/40 bg-[#8CA07C]/5 px-3 py-2.5">
+      <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-[#5f7a4f]">
+        <input
+          type="checkbox"
+          className="h-4 w-4 accent-navy"
+          checked={on}
+          onChange={(e) => setOn(e.target.checked)}
+        />
+        有兄弟姊妹是本校學員
+        <span className="font-normal text-black/40">（帶入家長聯絡資料）</span>
+      </label>
+
+      {on && (
+        <div className="mt-2 space-y-2">
+          {picked ? (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="rounded-full border border-[#8CA07C]/40 bg-white px-2.5 py-1 font-medium text-navy">
+                已帶入 {picked.name}
+                {picked.nickname ? `（${picked.nickname}）` : ""} 的家長資料
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setPickedId(null);
+                  setQ("");
+                }}
+                className="text-xs text-black/45 hover:text-navy"
+              >
+                更換
+              </button>
+            </div>
+          ) : (
+            <>
+              <input
+                className={inputCls}
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder={
+                  surname
+                    ? `預設同姓「${surname}」，或搜尋其他姓名`
+                    : "搜尋兄弟姊妹姓名"
+                }
+              />
+              <div className="flex flex-wrap gap-1.5">
+                {options.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => {
+                      onFill(s);
+                      setPickedId(s.id);
+                    }}
+                    className="rounded-full border border-black/15 bg-white px-2.5 py-1 text-xs text-black/60 transition hover:border-navy hover:text-navy"
+                  >
+                    {s.name}
+                    {s.nickname ? `·${s.nickname}` : ""}
+                  </button>
+                ))}
+                {options.length === 0 && (
+                  <span className="text-xs text-black/40">
+                    {q.trim() ? "查無符合的學生" : "沒有同姓學員，直接搜尋姓名"}
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── 編輯表單 ─────────────────────────────────────────
 function EditBody({
   form,
   set,
   isNew,
+  allStudents,
+  selfId,
   referrerOptions,
   isGroupClass,
   classHeadcount,
@@ -506,6 +619,8 @@ function EditBody({
   form: StudentInput;
   set: <K extends keyof StudentInput>(key: K, value: StudentInput[K]) => void;
   isNew: boolean;
+  allStudents: Student[];
+  selfId: string | null;
   referrerOptions: { value: string; label: string }[];
   isGroupClass: boolean;
   classHeadcount: number;
@@ -794,6 +909,20 @@ function EditBody({
 
       {/* 二、家長與聯絡 */}
       <SectionHead>二、家長與聯絡</SectionHead>
+      <SiblingFill
+        allStudents={allStudents}
+        selfId={selfId}
+        currentName={form.name}
+        onFill={(s) => {
+          set("father_name", s.father_name);
+          set("father_phone", s.father_phone);
+          set("mother_name", s.mother_name);
+          set("mother_phone", s.mother_phone);
+          set("main_contact", s.main_contact);
+          set("line_name", s.line_name);
+          set("address", s.address);
+        }}
+      />
       <div className="grid grid-cols-2 gap-3">
         <Field label="父親姓名" hint="(選填)">
           <input
