@@ -16,9 +16,12 @@ import {
 import type { AccountingData } from "./useAccountingData";
 import {
   allowCurrentNetwork,
+  createWorker,
   fetchAttendanceStatus,
+  listWorkers,
   removeNetwork,
   type AllowedNetwork,
+  type WorkerRow,
 } from "@/lib/attendance";
 import {
   Card,
@@ -186,6 +189,9 @@ export default function Settings({ data }: { data: AccountingData }) {
         </p>
       </section>
 
+      {/* 工讀生帳號 */}
+      <WorkerAccounts />
+
       {/* 工讀生簽到網路 */}
       <AttendanceNetworks />
 
@@ -211,6 +217,148 @@ export default function Settings({ data }: { data: AccountingData }) {
         />
       )}
     </div>
+  );
+}
+
+// ── 工讀生帳號 ──────────────────────────────────────
+function WorkerAccounts() {
+  const [workers, setWorkers] = useState<WorkerRow[]>([]);
+  const [adding, setAdding] = useState(false);
+
+  const load = () => listWorkers().then(setWorkers);
+  useEffect(() => {
+    load();
+  }, []);
+
+  return (
+    <section>
+      <div className="mb-2 flex items-center justify-between">
+        <SectionTitle>工讀生帳號</SectionTitle>
+        <GhostBtn onClick={() => setAdding(true)}>＋ 新增工讀生</GhostBtn>
+      </div>
+      <Card className="p-0">
+        {workers.length === 0 ? (
+          <p className="px-4 py-6 text-center text-sm text-black/40">
+            還沒有工讀生帳號
+          </p>
+        ) : (
+          <div className="divide-y divide-black/5">
+            {workers.map((w) => (
+              <div key={w.id} className="px-4 py-3 text-sm font-medium text-navy">
+                {w.name}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+      <p className="mt-1 text-xs text-black/40">
+        工讀生登入後只會看到「簽到」頁，且需連上店裡網路才能簽到。
+      </p>
+
+      {adding && (
+        <WorkerModal
+          onClose={() => setAdding(false)}
+          onSaved={async () => {
+            setAdding(false);
+            await load();
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
+function WorkerModal({
+  onClose,
+  onSaved,
+}: {
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [handle, setHandle] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [done, setDone] = useState<{ email: string } | null>(null);
+
+  async function save() {
+    setErr(null);
+    if (!name.trim()) return setErr("請填顯示名字");
+    if (!/^[a-z0-9._-]+$/i.test(handle.trim()))
+      return setErr("登入帳號只能用英文/數字（例：amei）");
+    if (password.length < 6) return setErr("密碼至少 6 碼");
+    setBusy(true);
+    const { email, error } = await createWorker({
+      handle: handle.trim(),
+      name: name.trim(),
+      password,
+    });
+    setBusy(false);
+    if (error) return setErr(error);
+    setDone({ email: email ?? `${handle.trim().toLowerCase()}@xuqu.tw` });
+  }
+
+  return (
+    <Modal title="新增工讀生帳號" onClose={onClose}>
+      {done ? (
+        <div className="space-y-3">
+          <p className="rounded-xl bg-[#8CA07C]/10 px-3 py-3 text-sm text-[#5f7a4f]">
+            ✓ 帳號已建立！請把下列資訊給工讀生：
+          </p>
+          <div className="rounded-xl border border-black/10 px-3 py-2 text-sm">
+            <div>
+              登入帳號：<b className="font-mono">{handle.trim().toLowerCase()}</b>
+            </div>
+            <div className="mt-1">
+              密碼：<b className="font-mono">{password}</b>
+            </div>
+          </div>
+          <p className="text-xs text-black/45">
+            工讀生在登入頁「帳號」欄輸入 <b>{handle.trim().toLowerCase()}</b>、密碼即可。
+          </p>
+          <div className="flex justify-end pt-1">
+            <PrimaryBtn onClick={onSaved}>完成</PrimaryBtn>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <Field label="顯示名字" hint="（中文，出勤名冊用）">
+            <input
+              className={inputCls}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="例：陳小美"
+            />
+          </Field>
+          <Field label="登入帳號" hint="（英文/數字，登入用）">
+            <input
+              className={inputCls}
+              value={handle}
+              onChange={(e) => setHandle(e.target.value)}
+              placeholder="例：amei"
+              autoCapitalize="none"
+              autoCorrect="off"
+            />
+          </Field>
+          <Field label="密碼" hint="（至少 6 碼）">
+            <input
+              className={inputCls}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="給工讀生的初始密碼"
+            />
+          </Field>
+          {err && <p className="text-sm text-brand">{err}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <GhostBtn onClick={onClose}>取消</GhostBtn>
+            <PrimaryBtn onClick={save} disabled={busy}>
+              {busy ? "建立中…" : "建立帳號"}
+            </PrimaryBtn>
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }
 

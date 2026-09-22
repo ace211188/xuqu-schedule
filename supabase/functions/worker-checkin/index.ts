@@ -98,7 +98,15 @@ Deno.serve(async (req) => {
     .maybeSingle();
   if (!me) return json({ error: "非有效帳號" }, 403);
 
-  let body: { mode?: string; label?: string; networkId?: string } = {};
+  let body: {
+    mode?: string;
+    label?: string;
+    networkId?: string;
+    handle?: string;
+    name?: string;
+    password?: string;
+    workerId?: string;
+  } = {};
   try {
     body = await req.json();
   } catch {
@@ -206,6 +214,53 @@ Deno.serve(async (req) => {
       .select("id,ip,label,created_at")
       .order("created_at", { ascending: false });
     return json({ ok: true, networks: data ?? [] });
+  }
+
+  // ── 管理員：工讀生帳號管理 ──
+  if (mode === "list_workers") {
+    if (!me.is_admin) return json({ error: "只有管理員能管理工讀生帳號" }, 403);
+    const { data } = await admin
+      .from("teachers")
+      .select("id,name")
+      .eq("is_worker", true)
+      .order("name");
+    return json({ ok: true, workers: data ?? [] });
+  }
+
+  if (mode === "create_worker") {
+    if (!me.is_admin) return json({ error: "只有管理員能建立工讀生帳號" }, 403);
+    const handle = (body.handle ?? "").trim().toLowerCase();
+    const name = (body.name ?? "").trim();
+    const password = body.password ?? "";
+    if (!/^[a-z0-9._-]+$/.test(handle))
+      return json({ error: "帳號只能用英文/數字（例：amei）" }, 400);
+    if (!name) return json({ error: "請填顯示名字" }, 400);
+    if (password.length < 6) return json({ error: "密碼至少 6 碼" }, 400);
+
+    const email = `${handle}@xuqu.tw`;
+    const { data: created, error: createErr } =
+      await admin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+      });
+    if (createErr || !created?.user)
+      return json(
+        { error: createErr?.message ?? "建立帳號失敗（帳號可能已存在）" },
+        400
+      );
+
+    const { error: insErr } = await admin.from("teachers").insert({
+      id: created.user.id,
+      name,
+      is_worker: true,
+    });
+    if (insErr) {
+      // 回滾剛建立的 auth 使用者，避免留下沒有 teachers 列的孤兒帳號
+      await admin.auth.admin.deleteUser(created.user.id);
+      return json({ error: `建立失敗：${insErr.message}` }, 400);
+    }
+    return json({ ok: true, handle, email, name });
   }
 
   return json({ error: "未知的 mode" }, 400);

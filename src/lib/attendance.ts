@@ -26,7 +26,16 @@ export type AttendanceStatus = {
   networks?: AllowedNetwork[]; // 僅管理員
 };
 
-type Mode = "status" | "checkin" | "checkout" | "allow_network" | "remove_network";
+type Mode =
+  | "status"
+  | "checkin"
+  | "checkout"
+  | "allow_network"
+  | "remove_network"
+  | "list_workers"
+  | "create_worker";
+
+export type WorkerRow = { id: string; name: string };
 
 // Edge Function 回傳的錯誤（非 2xx）藏在 error.context，盡量把訊息挖出來
 async function readFnError(error: unknown): Promise<string> {
@@ -44,7 +53,13 @@ async function readFnError(error: unknown): Promise<string> {
 
 async function call(
   mode: Mode,
-  extra?: { label?: string; networkId?: string }
+  extra?: {
+    label?: string;
+    networkId?: string;
+    handle?: string;
+    name?: string;
+    password?: string;
+  }
 ): Promise<{ data: Record<string, unknown> | null; error: string | null }> {
   const { data, error } = await supabase.functions.invoke("worker-checkin", {
     body: { mode, ...extra },
@@ -91,6 +106,21 @@ export async function removeNetwork(
 ): Promise<{ networks: AllowedNetwork[]; error: string | null }> {
   const { data, error } = await call("remove_network", { networkId });
   return { networks: (data?.networks as AllowedNetwork[]) ?? [], error };
+}
+
+// 管理員：工讀生帳號
+export async function listWorkers(): Promise<WorkerRow[]> {
+  const { data } = await call("list_workers");
+  return (data?.workers as WorkerRow[]) ?? [];
+}
+
+export async function createWorker(p: {
+  handle: string;
+  name: string;
+  password: string;
+}): Promise<{ email: string | null; error: string | null }> {
+  const { data, error } = await call("create_worker", p);
+  return { email: (data?.email as string) ?? null, error };
 }
 
 // 時間顯示：HH:MM
