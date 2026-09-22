@@ -15,6 +15,12 @@ import {
 } from "@/lib/accounting";
 import type { AccountingData } from "./useAccountingData";
 import {
+  allowCurrentNetwork,
+  fetchAttendanceStatus,
+  removeNetwork,
+  type AllowedNetwork,
+} from "@/lib/attendance";
+import {
   Card,
   Field,
   GhostBtn,
@@ -180,6 +186,9 @@ export default function Settings({ data }: { data: AccountingData }) {
         </p>
       </section>
 
+      {/* 工讀生簽到網路 */}
+      <AttendanceNetworks />
+
       {acctEdit && (
         <AccountModal
           existing={acctEdit === "new" ? null : acctEdit}
@@ -202,6 +211,102 @@ export default function Settings({ data }: { data: AccountingData }) {
         />
       )}
     </div>
+  );
+}
+
+// ── 工讀生簽到：允許的店裡網路 ──────────────────────
+function AttendanceNetworks() {
+  const [networks, setNetworks] = useState<AllowedNetwork[]>([]);
+  const [ip, setIp] = useState<string | null>(null);
+  const [onSite, setOnSite] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const load = async () => {
+    const s = await fetchAttendanceStatus();
+    setNetworks(s?.networks ?? []);
+    setIp(s?.ip ?? null);
+    setOnSite(s?.onSite ?? false);
+    setLoading(false);
+  };
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function addCurrent() {
+    setBusy(true);
+    setMsg(null);
+    const { networks: n, error } = await allowCurrentNetwork();
+    setBusy(false);
+    if (error) return setMsg(error);
+    setNetworks(n);
+    setOnSite(true);
+    setMsg("已把目前網路設為允許 ✓");
+  }
+
+  async function remove(id: string) {
+    if (!confirm("移除這個允許網路？之後這條網路將無法簽到。")) return;
+    const { networks: n, error } = await removeNetwork(id);
+    if (error) return alert(error);
+    setNetworks(n);
+    await load();
+  }
+
+  return (
+    <section>
+      <SectionTitle>工讀生簽到 · 店裡網路</SectionTitle>
+      <Card className="space-y-3">
+        <p className="text-xs text-black/50">
+          工讀生只有連上下面清單中的網路才能簽到。
+          <b className="text-black/70">請在店裡（連店裡 WiFi）時</b>
+          按下方按鈕，把目前這條網路加入允許。IP 若變動，再按一次即可。
+        </p>
+
+        <div className="flex items-center justify-between gap-2 rounded-xl bg-black/[0.03] px-3 py-2 text-sm">
+          <span className="min-w-0 text-black/60">
+            目前網路：
+            <span className="break-all font-mono text-black/80">
+              {loading ? "偵測中…" : ip ?? "讀不到"}
+            </span>
+            {!loading && (
+              <span className={onSite ? "ml-2 text-[#5f7a4f]" : "ml-2 text-amber-600"}>
+                {onSite ? "（已允許）" : "（尚未允許）"}
+              </span>
+            )}
+          </span>
+        </div>
+
+        <PrimaryBtn onClick={addCurrent} disabled={busy || loading}>
+          {busy ? "設定中…" : "把目前網路設為允許"}
+        </PrimaryBtn>
+        {msg && <p className="text-sm text-[#5f7a4f]">{msg}</p>}
+
+        {networks.length > 0 && (
+          <div className="divide-y divide-black/5 rounded-xl border border-black/10">
+            {networks.map((n) => (
+              <div
+                key={n.id}
+                className="flex items-center justify-between gap-2 px-3 py-2 text-sm"
+              >
+                <span className="min-w-0 break-all font-mono text-black/70">
+                  {n.ip}
+                  {n.label ? (
+                    <span className="ml-2 font-sans text-black/45">{n.label}</span>
+                  ) : null}
+                </span>
+                <button
+                  onClick={() => remove(n.id)}
+                  className="shrink-0 text-xs text-brand hover:underline"
+                >
+                  移除
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </section>
   );
 }
 

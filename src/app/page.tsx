@@ -8,6 +8,7 @@ import ScheduleApp from "@/components/ScheduleApp";
 import AdminDashboard from "@/components/AdminDashboard";
 import AccountingApp from "@/components/accounting/AccountingApp";
 import StudentsApp from "@/components/students/StudentsApp";
+import WorkerApp from "@/components/WorkerApp";
 
 // admin=排課後台（管理全部老師）；me=我的排課（自己填）；accounting=記帳；students=學生資料
 type View = "admin" | "me" | "accounting" | "students";
@@ -34,6 +35,17 @@ export default function Page() {
 
   if (!session || !teacher) {
     return <Login onLogin={signInWithName} />;
+  }
+
+  // 純工讀生（只有 is_worker、沒有其他模組權限）：只看簽到頁
+  const pureWorker =
+    teacher.is_worker &&
+    !teacher.is_admin &&
+    !teacher.can_accounting &&
+    !teacher.can_students &&
+    !teacher.can_schedule_admin;
+  if (pureWorker) {
+    return <WorkerApp teacher={teacher} onSignOut={signOut} />;
   }
 
   const isAdmin = teacher.is_admin;
