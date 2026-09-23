@@ -34,7 +34,12 @@ export type Category = {
   active: boolean;
 };
 
-export type EntrySource = "manual" | "reimbursement" | "transfer" | "collection";
+export type EntrySource =
+  | "manual"
+  | "reimbursement"
+  | "transfer"
+  | "collection"
+  | "collection_change"; // 收款找零：建立時就從零用金扣的分錄
 export type Entry = {
   id: string;
   account_id: string;

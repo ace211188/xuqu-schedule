@@ -24,7 +24,7 @@ export default function Closing({
   teacher: Teacher;
   data: AccountingData;
 }) {
-  const { accounts, balances, collections, teacherNames } = data;
+  const { accounts, balances, entries, teacherNames } = data;
 
   const [rooms, setRooms] = useState<ClosingRoom[]>([]);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
@@ -52,13 +52,21 @@ export default function Closing({
     );
   }, [balances, pettyAccount]);
 
-  // 今日找錢（收款當天找出去的零錢總額）
+  // 今日找錢（收款當天從零用金找出去的零錢總額）
+  // 用「流水帳的找零分錄(collection_change)」計，而非 collections 清單：
+  // collections 受 RLS 限制（非管理者只看得到自己建的），輪流打烊時別人的找零會漏；
+  // acc_entries 只要 can_accounting 就全讀得到，任何打烊者都算得對。
   const todayChange = useMemo(() => {
     const d = todayISO();
-    return collections
-      .filter((c) => c.occurred_on === d && c.status !== "rejected")
-      .reduce((s, c) => s + (c.change_given || 0), 0);
-  }, [collections]);
+    return entries
+      .filter(
+        (e) =>
+          e.source_type === "collection_change" &&
+          e.occurred_on === d &&
+          (!pettyAccount || e.account_id === pettyAccount.id)
+      )
+      .reduce((s, e) => s + Math.abs(e.signed_amount), 0);
+  }, [entries, pettyAccount]);
 
   const duty = useMemo(() => weekDuty(roster), [roster]);
 

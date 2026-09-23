@@ -50,6 +50,7 @@ const SOURCE_LABEL: Record<Entry["source_type"], string> = {
   reimbursement: "代墊",
   transfer: "轉帳",
   collection: "收款",
+  collection_change: "找零",
 };
 
 // 一列＝一筆分錄，附「這筆之後的帳戶餘額」
