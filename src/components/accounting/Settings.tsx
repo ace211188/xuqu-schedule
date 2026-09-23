@@ -24,6 +24,17 @@ import {
   type WorkerRow,
 } from "@/lib/attendance";
 import {
+  addRoom,
+  addRosterEntry,
+  fetchRooms,
+  fetchRoster,
+  removeRoom,
+  removeRosterEntry,
+  weekDuty,
+  type ClosingRoom,
+  type RosterEntry,
+} from "@/lib/closing";
+import {
   Card,
   Field,
   GhostBtn,
@@ -194,6 +205,9 @@ export default function Settings({ data }: { data: AccountingData }) {
 
       {/* 工讀生簽到網路 */}
       <AttendanceNetworks />
+
+      {/* 打烊：教室清單 + 廁所清潔輪值 */}
+      <ClosingConfig />
 
       {acctEdit && (
         <AccountModal
@@ -454,6 +468,139 @@ function AttendanceNetworks() {
           </div>
         )}
       </Card>
+    </section>
+  );
+}
+
+// ── 打烊：教室清單 + 廁所清潔輪值 ──────────────────────
+function ClosingConfig() {
+  const [rooms, setRooms] = useState<ClosingRoom[]>([]);
+  const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [roomName, setRoomName] = useState("");
+  const [personName, setPersonName] = useState("");
+
+  const load = async () => {
+    setRooms(await fetchRooms());
+    setRoster(await fetchRoster());
+  };
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function onAddRoom() {
+    const n = roomName.trim();
+    if (!n) return;
+    const { error } = await addRoom(n, rooms.length);
+    if (error) return alert(error);
+    setRoomName("");
+    await load();
+  }
+  async function onAddPerson() {
+    const n = personName.trim();
+    if (!n) return;
+    const { error } = await addRosterEntry(n, roster.length);
+    if (error) return alert(error);
+    setPersonName("");
+    await load();
+  }
+
+  return (
+    <section>
+      <SectionTitle>打烊設定</SectionTitle>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {/* 教室清單 */}
+        <Card>
+          <div className="mb-2 text-xs font-medium text-black/50">
+            教室清單（打烊逐間檢查）
+          </div>
+          <div className="mb-2 flex flex-wrap gap-2">
+            {rooms.length === 0 && (
+              <span className="text-xs text-black/35">還沒有教室</span>
+            )}
+            {rooms.map((r) => (
+              <span
+                key={r.id}
+                className="flex items-center gap-1 rounded-full border border-black/15 px-2.5 py-1 text-sm text-black/70"
+              >
+                {r.name}
+                <button
+                  onClick={async () => {
+                    if (!confirm(`移除教室「${r.name}」？`)) return;
+                    await removeRoom(r.id);
+                    await load();
+                  }}
+                  className="text-black/30 hover:text-brand"
+                  aria-label="移除"
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <input
+              className={inputCls}
+              value={roomName}
+              onChange={(e) => setRoomName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && onAddRoom()}
+              placeholder="例：A 教室"
+            />
+            <GhostBtn onClick={onAddRoom}>新增</GhostBtn>
+          </div>
+        </Card>
+
+        {/* 廁所清潔輪值 */}
+        <Card>
+          <div className="mb-2 text-xs font-medium text-black/50">
+            廁所清潔輪值（依順序每週自動輪）
+          </div>
+          <div className="mb-2 space-y-1">
+            {roster.length === 0 && (
+              <span className="text-xs text-black/35">還沒有輪值名單</span>
+            )}
+            {roster.map((p, i) => (
+              <div
+                key={p.id}
+                className="flex items-center justify-between rounded-lg bg-black/[0.03] px-3 py-1.5 text-sm"
+              >
+                <span className="text-black/70">
+                  <span className="mr-1.5 text-black/35">{i + 1}.</span>
+                  {p.name}
+                </span>
+                <button
+                  onClick={async () => {
+                    if (!confirm(`移除「${p.name}」？`)) return;
+                    await removeRosterEntry(p.id);
+                    await load();
+                  }}
+                  className="text-black/30 hover:text-brand"
+                  aria-label="移除"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+          {roster.length > 0 && (
+            <p className="mb-2 text-xs text-[#5f7a4f]">
+              本週輪到：{weekDuty(roster) ?? "—"}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <input
+              className={inputCls}
+              value={personName}
+              onChange={(e) => setPersonName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && onAddPerson()}
+              placeholder="名字"
+            />
+            <GhostBtn onClick={onAddPerson}>新增</GhostBtn>
+          </div>
+        </Card>
+      </div>
+      <p className="mt-1 text-xs text-black/40">
+        排序即輪值順序（新增會排在最後）。系統依當週週次自動輪到下一位。
+      </p>
     </section>
   );
 }
