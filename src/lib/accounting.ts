@@ -655,6 +655,7 @@ export async function fetchAllTeachers(): Promise<
   const { data } = await supabase
     .from("teachers")
     .select("id,name,is_admin,can_accounting")
+    .eq("is_worker", false) // 工讀生不算記帳成員
     .order("name");
   return (data ?? []) as {
     id: string;

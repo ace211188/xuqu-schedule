@@ -143,7 +143,11 @@ export type NotifyTeacher = {
 
 export async function fetchNotifyTeachers(): Promise<NotifyTeacher[]> {
   const [{ data: teachers }, { data: subs }] = await Promise.all([
-    supabase.from("teachers").select("id,name,is_admin").order("name"),
+    supabase
+      .from("teachers")
+      .select("id,name,is_admin")
+      .eq("is_worker", false)
+      .order("name"),
     supabase.from("push_subscriptions").select("teacher_id"),
   ]);
   const subbed = new Set((subs ?? []).map((s) => s.teacher_id));

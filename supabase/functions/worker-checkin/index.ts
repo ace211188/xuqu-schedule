@@ -263,5 +263,24 @@ Deno.serve(async (req) => {
     return json({ ok: true, handle, email, name });
   }
 
+  if (mode === "delete_worker") {
+    if (!me.is_admin) return json({ error: "只有管理員能刪除工讀生帳號" }, 403);
+    const wid = body.workerId ?? "";
+    if (!wid) return json({ error: "缺少 workerId" }, 400);
+    // 安全：只允許刪除工讀生（不是老師/管理員）
+    const { data: target } = await admin
+      .from("teachers")
+      .select("id,is_worker,is_admin")
+      .eq("id", wid)
+      .maybeSingle();
+    if (!target) return json({ error: "找不到帳號" }, 404);
+    if (!target.is_worker || target.is_admin)
+      return json({ error: "此帳號不是工讀生，無法從這裡刪除" }, 400);
+    // 刪 auth 使用者會連帶刪掉 teachers 列與出勤（FK on delete cascade）
+    const { error: delErr } = await admin.auth.admin.deleteUser(wid);
+    if (delErr) return json({ error: `刪除失敗：${delErr.message}` }, 400);
+    return json({ ok: true });
+  }
+
   return json({ error: "未知的 mode" }, 400);
 });

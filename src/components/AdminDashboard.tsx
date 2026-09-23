@@ -107,8 +107,9 @@ export default function AdminDashboard({
         supabase
           .from("teachers")
           .select("id,name,is_admin")
-          // 收集全部會教課的老師（含宇群）；只排除教室端裝置帳號「管理員」
+          // 收集全部會教課的老師（含宇群）；排除教室端裝置帳號「管理員」與工讀生
           .neq("name", "管理員")
+          .eq("is_worker", false)
           .order("name"),
         supabase
           .from("schedule_slots")

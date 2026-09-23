@@ -33,7 +33,8 @@ type Mode =
   | "allow_network"
   | "remove_network"
   | "list_workers"
-  | "create_worker";
+  | "create_worker"
+  | "delete_worker";
 
 export type WorkerRow = { id: string; name: string };
 
@@ -59,6 +60,7 @@ async function call(
     handle?: string;
     name?: string;
     password?: string;
+    workerId?: string;
   }
 ): Promise<{ data: Record<string, unknown> | null; error: string | null }> {
   const { data, error } = await supabase.functions.invoke("worker-checkin", {
@@ -121,6 +123,13 @@ export async function createWorker(p: {
 }): Promise<{ email: string | null; error: string | null }> {
   const { data, error } = await call("create_worker", p);
   return { email: (data?.email as string) ?? null, error };
+}
+
+export async function deleteWorker(
+  workerId: string
+): Promise<{ error: string | null }> {
+  const { error } = await call("delete_worker", { workerId });
+  return { error };
 }
 
 // 時間顯示：HH:MM

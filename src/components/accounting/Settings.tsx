@@ -17,6 +17,7 @@ import type { AccountingData } from "./useAccountingData";
 import {
   allowCurrentNetwork,
   createWorker,
+  deleteWorker,
   fetchAttendanceStatus,
   listWorkers,
   removeNetwork,
@@ -258,8 +259,27 @@ function WorkerAccounts() {
         ) : (
           <div className="divide-y divide-black/5">
             {workers.map((w) => (
-              <div key={w.id} className="px-4 py-3 text-sm font-medium text-navy">
-                {w.name}
+              <div
+                key={w.id}
+                className="flex items-center justify-between px-4 py-3 text-sm"
+              >
+                <span className="font-medium text-navy">{w.name}</span>
+                <button
+                  onClick={async () => {
+                    if (
+                      !confirm(
+                        `刪除工讀生「${w.name}」？帳號與出勤紀錄都會一併移除，無法復原。`
+                      )
+                    )
+                      return;
+                    const { error } = await deleteWorker(w.id);
+                    if (error) return alert(error);
+                    await load();
+                  }}
+                  className="text-xs text-brand hover:underline"
+                >
+                  刪除
+                </button>
               </div>
             ))}
           </div>
