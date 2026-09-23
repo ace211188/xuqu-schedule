@@ -9,9 +9,10 @@ import AdminDashboard from "@/components/AdminDashboard";
 import AccountingApp from "@/components/accounting/AccountingApp";
 import StudentsApp from "@/components/students/StudentsApp";
 import WorkerApp from "@/components/WorkerApp";
+import ClosingApp from "@/components/ClosingApp";
 
-// admin=排課後台（管理全部老師）；me=我的排課（自己填）；accounting=記帳；students=學生資料
-type View = "admin" | "me" | "accounting" | "students";
+// admin=排課後台（管理全部老師）；me=我的排課（自己填）；accounting=記帳；students=學生資料；closing=打烊
+type View = "admin" | "me" | "accounting" | "students" | "closing";
 
 export default function Page() {
   const { loading, session, teacher, signInWithName, signOut } = useAuth();
@@ -62,6 +63,23 @@ export default function Page() {
 
   const toAccounting = hasAccounting ? () => setView("accounting") : undefined;
   const toStudents = hasStudents ? () => setView("students") : undefined;
+  // 打烊：先開放給有記帳權限者（宇群/美君/奕寬）
+  const hasClosing = hasAccounting;
+  const toClosing = hasClosing ? () => setView("closing") : undefined;
+
+  // 打烊紀錄（獨立模組，與排課/學生/記帳同一排）
+  if (current === "closing" && hasClosing) {
+    return (
+      <ClosingApp
+        teacher={teacher}
+        onSignOut={signOut}
+        onSwitchModule={() => setView(isAdmin ? "admin" : "me")}
+        onOpenMySchedule={isAdmin ? () => setView("me") : undefined}
+        onOpenStudents={toStudents}
+        onOpenAccounting={toAccounting}
+      />
+    );
+  }
 
   // 學生資料（宇群/奕寬/美君）
   if (current === "students" && hasStudents) {
@@ -72,6 +90,7 @@ export default function Page() {
         onSwitchModule={() => setView(isAdmin ? "admin" : "me")}
         onOpenAccounting={toAccounting}
         onOpenMySchedule={isAdmin ? () => setView("me") : undefined}
+        onOpenClosing={toClosing}
       />
     );
   }
@@ -84,6 +103,7 @@ export default function Page() {
         onSwitchModule={() => setView(isAdmin ? "admin" : "me")}
         onOpenMySchedule={isAdmin ? () => setView("me") : undefined}
         onOpenStudents={toStudents}
+        onOpenClosing={toClosing}
       />
     );
   }
@@ -97,6 +117,7 @@ export default function Page() {
         onSwitchModule={toAccounting}
         onOpenMySchedule={() => setView("me")}
         onOpenStudents={toStudents}
+        onOpenClosing={toClosing}
       />
     );
   }
@@ -109,6 +130,7 @@ export default function Page() {
       onSwitchModule={toAccounting}
       onOpenAdmin={hasScheduleAdmin ? () => setView("admin") : undefined}
       onOpenStudents={toStudents}
+      onOpenClosing={toClosing}
     />
   );
 }

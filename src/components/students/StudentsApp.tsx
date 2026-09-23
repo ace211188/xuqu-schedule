@@ -106,12 +106,14 @@ export default function StudentsApp({
   onSwitchModule,
   onOpenAccounting,
   onOpenMySchedule,
+  onOpenClosing,
 }: {
   teacher: Teacher;
   onSignOut: () => void;
   onSwitchModule?: () => void;
   onOpenAccounting?: () => void;
   onOpenMySchedule?: () => void;
+  onOpenClosing?: () => void;
 }) {
   const data = useStudentsData();
   const isAdmin = teacher.is_admin;
@@ -266,6 +268,14 @@ export default function StudentsApp({
               className="rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/60 transition hover:border-black/40"
             >
               💰 記帳
+            </button>
+          )}
+          {onOpenClosing && (
+            <button
+              onClick={onOpenClosing}
+              className="rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/60 transition hover:border-black/40"
+            >
+              🌙 打烊
             </button>
           )}
           <button

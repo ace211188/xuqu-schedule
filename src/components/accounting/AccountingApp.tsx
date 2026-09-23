@@ -8,7 +8,6 @@ import Dashboard from "./Dashboard";
 import Reimbursements from "./Reimbursements";
 import Collections from "./Collections";
 import Purchases from "./Purchases";
-import Closing from "./Closing";
 import Ledger from "./Ledger";
 import Monthly from "./Monthly";
 import Payroll from "./Payroll";
@@ -19,7 +18,6 @@ export type AccountingTab =
   | "reimb"
   | "collect"
   | "purchase"
-  | "closing"
   | "ledger"
   | "monthly"
   | "payroll"
@@ -32,7 +30,6 @@ const TABS: { key: AccountingTab; label: string; adminOnly?: boolean }[] = [
   { key: "reimb", label: "代墊" },
   { key: "collect", label: "收款" },
   { key: "purchase", label: "採購" },
-  { key: "closing", label: "打烊" },
   { key: "payroll", label: "發薪", adminOnly: true },
   { key: "settings", label: "設定", adminOnly: true },
 ];
@@ -43,12 +40,14 @@ export default function AccountingApp({
   onSwitchModule,
   onOpenMySchedule,
   onOpenStudents,
+  onOpenClosing,
 }: {
   teacher: Teacher;
   onSignOut: () => void;
   onSwitchModule?: () => void;
   onOpenMySchedule?: () => void;
   onOpenStudents?: () => void;
+  onOpenClosing?: () => void;
 }) {
   const [tab, setTab] = useState<AccountingTab>("dashboard");
   const data = useAccountingData();
@@ -106,6 +105,14 @@ export default function AccountingApp({
               className="rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/60 transition hover:border-black/40"
             >
               🗓️ 我的排課
+            </button>
+          )}
+          {onOpenClosing && (
+            <button
+              onClick={onOpenClosing}
+              className="rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/60 transition hover:border-black/40"
+            >
+              🌙 打烊
             </button>
           )}
           {onOpenStudents && (
@@ -167,7 +174,6 @@ export default function AccountingApp({
           {tab === "reimb" && <Reimbursements teacher={teacher} data={data} />}
           {tab === "collect" && <Collections teacher={teacher} data={data} />}
           {tab === "purchase" && <Purchases teacher={teacher} data={data} />}
-          {tab === "closing" && <Closing teacher={teacher} data={data} />}
           {tab === "payroll" && teacher.is_admin && (
             <Payroll teacher={teacher} />
           )}

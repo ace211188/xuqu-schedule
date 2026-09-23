@@ -58,12 +58,14 @@ export default function AdminDashboard({
   onSwitchModule,
   onOpenMySchedule,
   onOpenStudents,
+  onOpenClosing,
 }: {
   teacher: Teacher;
   onSignOut: () => void;
   onSwitchModule?: () => void;
   onOpenMySchedule?: () => void;
   onOpenStudents?: () => void;
+  onOpenClosing?: () => void;
 }) {
   const months = useMemo(() => monthOptions(new Date(), 4), []);
   // 預設這個月：與老師端「我的排課」一致
@@ -274,6 +276,14 @@ export default function AdminDashboard({
               className="rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/60 transition hover:border-black/40"
             >
               🎓 學生資料
+            </button>
+          )}
+          {onOpenClosing && (
+            <button
+              onClick={onOpenClosing}
+              className="rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/60 transition hover:border-black/40"
+            >
+              🌙 打烊
             </button>
           )}
           <button

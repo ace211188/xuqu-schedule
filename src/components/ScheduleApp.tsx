@@ -36,12 +36,14 @@ export default function ScheduleApp({
   onSwitchModule,
   onOpenAdmin,
   onOpenStudents,
+  onOpenClosing,
 }: {
   teacher: Teacher;
   onSignOut: () => void;
   onSwitchModule?: () => void;
   onOpenAdmin?: () => void;
   onOpenStudents?: () => void;
+  onOpenClosing?: () => void;
 }) {
   const months = useMemo(() => monthOptions(new Date(), 2), []); // 只本月＋下個月
   const [month, setMonth] = useState(months[0].value); // 預設這個月
@@ -323,6 +325,14 @@ export default function ScheduleApp({
               className="rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/60 transition hover:border-black/40"
             >
               🎓 學生資料
+            </button>
+          )}
+          {onOpenClosing && (
+            <button
+              onClick={onOpenClosing}
+              className="rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/60 transition hover:border-black/40"
+            >
+              🌙 打烊
             </button>
           )}
           <button
