@@ -93,6 +93,105 @@ export function weekDuty(roster: RosterEntry[], base = new Date()): string | nul
   return roster[idx]?.name ?? null;
 }
 
+// ── 打烊輪值 / 指派工讀生 / 公休 ──
+export type ScheduleDay = {
+  day: string; // YYYY-MM-DD（台灣日期）
+  weekday: number; // 0=週日 … 6=週六
+  holiday: boolean; // 公休（固定或當天標記）
+  fixed_holiday: boolean; // 每週固定公休（例：週一）
+  rota_id: string | null; // 輪值的人
+  rota_name: string | null;
+  worker_id: string | null; // 被指派的工讀生
+  worker_name: string | null;
+};
+
+export type RotaRow = {
+  weekday: number;
+  teacher_id: string | null;
+  closed: boolean;
+};
+
+export const WEEKDAY_LABEL = ["日", "一", "二", "三", "四", "五", "六"];
+
+// 本地日期加 n 天（YYYY-MM-DD）
+export function addDaysISO(iso: string, n: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + n);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(
+    dt.getDate()
+  ).padStart(2, "0")}`;
+}
+
+// 當天負責人（顯示用）：有指派工讀生時「工讀生（輪值的人指派）」
+export function dutyLabel(s: ScheduleDay): string {
+  if (s.holiday) return "公休";
+  if (s.worker_name && s.rota_name) return `${s.worker_name}（${s.rota_name}指派）`;
+  return s.worker_name ?? s.rota_name ?? "未設定";
+}
+
+// 能不能建立這天的打烊紀錄（與資料庫 closing_can_fill 相同規則，資料庫也會把關）
+export function canFillDay(s: ScheduleDay | null, myId: string): boolean {
+  if (!s) return true;
+  if (s.holiday) return false;
+  if (!s.rota_id && !s.worker_id) return true;
+  return myId === s.rota_id || myId === s.worker_id;
+}
+
+export async function fetchSchedule(
+  from: string,
+  to: string
+): Promise<ScheduleDay[]> {
+  const { data } = await supabase.rpc("closing_schedule", {
+    p_from: from,
+    p_to: to,
+  });
+  return (data ?? []) as ScheduleDay[];
+}
+
+export async function setHoliday(day: string, holiday: boolean): Promise<Res> {
+  const { error } = await supabase.rpc("closing_set_holiday", {
+    p_day: day,
+    p_holiday: holiday,
+  });
+  return { error: error?.message ?? null };
+}
+
+export async function assignWorker(
+  day: string,
+  workerId: string | null
+): Promise<Res> {
+  const { error } = await supabase.rpc("closing_assign_worker", {
+    p_day: day,
+    p_worker: workerId,
+  });
+  return { error: error?.message ?? null };
+}
+
+// 可指派的工讀生名單（記帳成員讀得到 teachers；工讀生本人拿到空陣列也沒關係）
+export async function fetchWorkerOptions(): Promise<{ id: string; name: string }[]> {
+  const { data } = await supabase
+    .from("teachers")
+    .select("id,name")
+    .eq("is_worker", true)
+    .order("name");
+  return (data ?? []) as { id: string; name: string }[];
+}
+
+export async function fetchRota(): Promise<RotaRow[]> {
+  const { data } = await supabase
+    .from("closing_rota")
+    .select("weekday,teacher_id,closed")
+    .order("weekday");
+  return (data ?? []) as RotaRow[];
+}
+
+export async function saveRotaDay(row: RotaRow): Promise<Res> {
+  const { error } = await supabase
+    .from("closing_rota")
+    .upsert({ ...row, updated_at: new Date().toISOString() });
+  return { error: error?.message ?? null };
+}
+
 // ── 讀取 ──
 export async function fetchRooms(): Promise<ClosingRoom[]> {
   const { data } = await supabase

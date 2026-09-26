@@ -34,14 +34,18 @@ import {
   addTask,
   fetchRooms,
   fetchRoster,
+  fetchRota,
   fetchTasks,
   removeRoom,
   removeRosterEntry,
   removeTask,
+  saveRotaDay,
   weekDuty,
+  WEEKDAY_LABEL,
   type ClosingRoom,
   type ClosingTask,
   type RosterEntry,
+  type RotaRow,
 } from "@/lib/closing";
 import {
   Card,
@@ -672,6 +676,7 @@ function ClosingConfig() {
   return (
     <section>
       <SectionTitle>打烊設定</SectionTitle>
+      <ClosingRotaEditor />
       <div className="grid gap-3 sm:grid-cols-2">
         {/* 教室清單 */}
         <Card>
@@ -808,6 +813,72 @@ function ClosingConfig() {
         排序即輪值順序（新增會排在最後）。系統依當週週次自動輪到下一位。
       </p>
     </section>
+  );
+}
+
+// ── 打烊輪值（每週）：每個星期幾由誰打烊，或固定公休 ──
+const ROTA_ORDER = [1, 2, 3, 4, 5, 6, 0]; // 週一 → 週日
+const CLOSED = "__closed__";
+
+function ClosingRotaEditor() {
+  const [rota, setRota] = useState<RotaRow[]>([]);
+  const [members, setMembers] = useState<{ id: string; name: string }[]>([]);
+  const [saving, setSaving] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetchRota().then(setRota);
+    fetchAllTeachers().then((ts) =>
+      setMembers(ts.filter((t) => t.can_accounting || t.is_admin).map((t) => ({ id: t.id, name: t.name })))
+    );
+  }, []);
+
+  async function change(weekday: number, value: string) {
+    const row: RotaRow = {
+      weekday,
+      teacher_id: value && value !== CLOSED ? value : null,
+      closed: value === CLOSED,
+    };
+    setSaving(weekday);
+    const { error } = await saveRotaDay(row);
+    setSaving(null);
+    if (error) return alert(error);
+    setRota((prev) => [...prev.filter((r) => r.weekday !== weekday), row]);
+  }
+
+  return (
+    <Card className="mb-3">
+      <div className="mb-2 text-xs font-medium text-black/50">
+        打烊輪值（每週固定；輪值的人可以在打烊頁指派工讀生代班）
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {ROTA_ORDER.map((wd) => {
+          const r = rota.find((x) => x.weekday === wd);
+          const value = r?.closed ? CLOSED : r?.teacher_id ?? "";
+          return (
+            <label key={wd} className="flex items-center gap-2 text-sm">
+              <span className="w-10 shrink-0 text-black/60">週{WEEKDAY_LABEL[wd]}</span>
+              <select
+                className={inputCls}
+                value={value}
+                disabled={saving === wd}
+                onChange={(e) => change(wd, e.target.value)}
+              >
+                <option value="">（未設定：誰都能打烊）</option>
+                <option value={CLOSED}>固定公休</option>
+                {members.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-xs text-black/40">
+        個別日期的公休（例如連假）請到打烊頁的「近期排班」設定。每天 21:30 若還沒填打烊紀錄，會推播提醒當天負責人與宇群。
+      </p>
+    </Card>
   );
 }
 

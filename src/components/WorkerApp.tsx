@@ -11,6 +11,7 @@ import {
   type AttendanceStatus,
 } from "@/lib/attendance";
 import Closing from "./accounting/Closing";
+import { enablePush, isPushEnabled, pushSupported } from "@/lib/push";
 
 type WorkerTab = "checkin" | "closing";
 
@@ -64,8 +65,65 @@ export default function WorkerApp({
         ))}
       </div>
 
+      <NotifyBar teacherId={teacher.id} />
+
       {tab === "closing" ? <Closing teacher={teacher} /> : <CheckInPanel />}
     </main>
+  );
+}
+
+// 開啟推播：被指派打烊時才收得到 21:30 的提醒
+function NotifyBar({ teacherId }: { teacherId: string }) {
+  const [state, setState] = useState<"checking" | "on" | "off" | "unsupported" | "denied">(
+    "checking"
+  );
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!pushSupported()) {
+      setTimeout(() => setState("unsupported"), 0);
+      return;
+    }
+    // 已授權過：靜默把這台裝置的訂閱綁到目前帳號（不會跳視窗）
+    if (Notification.permission === "granted") {
+      enablePush(teacherId).then((r) => setState(r === "ok" ? "on" : "off"));
+      return;
+    }
+    isPushEnabled().then((on) =>
+      setState(on ? "on" : Notification.permission === "denied" ? "denied" : "off")
+    );
+  }, [teacherId]);
+
+  if (state === "checking" || state === "on") return null;
+
+  if (state === "unsupported")
+    return (
+      <p className="mb-4 rounded-xl bg-black/[0.03] px-3 py-2 text-xs text-black/50">
+        🔔 想收到打烊提醒：iPhone 請用 Safari 打開本網站 → 分享 →「加入主畫面」，再從主畫面的圖示打開。
+      </p>
+    );
+
+  if (state === "denied")
+    return (
+      <p className="mb-4 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700">
+        🔕 通知被關閉了，收不到打烊提醒。請到手機「設定 → 通知」允許本網站的通知。
+      </p>
+    );
+
+  return (
+    <button
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        const r = await enablePush(teacherId);
+        setBusy(false);
+        setState(r === "ok" ? "on" : r === "denied" ? "denied" : "off");
+        if (r === "error") alert("開啟通知失敗，請稍後再試");
+      }}
+      className="mb-4 w-full rounded-xl border border-navy/20 bg-navy/5 px-3 py-2.5 text-sm font-medium text-navy transition hover:bg-navy/10 disabled:opacity-60"
+    >
+      {busy ? "開啟中…" : "🔔 開啟通知（被指派打烊時會提醒你）"}
+    </button>
   );
 }
 

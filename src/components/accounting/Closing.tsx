@@ -5,19 +5,28 @@ import type { Teacher } from "@/lib/useAuth";
 import { fmtMoney, todayISO } from "@/lib/accounting";
 import {
   EDIT_WINDOW_HOURS,
+  WEEKDAY_LABEL,
+  addDaysISO,
+  assignWorker,
+  canFillDay,
   closingEditState,
+  dutyLabel,
   fetchClosingList,
   fetchPettySummary,
   fetchRooms,
   fetchRoster,
+  fetchSchedule,
   fetchTasks,
+  fetchWorkerOptions,
   saveClosing,
+  setHoliday,
   weekDuty,
   type ClosingRecord,
   type ClosingRoom,
   type ClosingTask,
   type PettySummary,
   type RosterEntry,
+  type ScheduleDay,
 } from "@/lib/closing";
 import { fmtTime } from "@/lib/attendance";
 import { Card, Empty, Field, Money, PrimaryBtn, inputCls } from "./ui";
@@ -29,6 +38,8 @@ export default function Closing({ teacher }: { teacher: Teacher }) {
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [list, setList] = useState<ClosingRecord[]>([]);
   const [petty, setPetty] = useState<PettySummary | null>(null);
+  const [schedule, setSchedule] = useState<ScheduleDay[]>([]);
+  const [workerOptions, setWorkerOptions] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [checked, setChecked] = useState<Set<string>>(new Set());
@@ -52,21 +63,44 @@ export default function Closing({ teacher }: { teacher: Teacher }) {
     [list]
   );
   const edit = closingEditState(today, teacher.id, now);
-  const readOnly = !edit.canEdit;
+  // 今天的排班（負責人／公休）
+  const todayDuty = useMemo(
+    () => schedule.find((s) => s.day === todayISO()) ?? null,
+    [schedule]
+  );
+  // 今天還沒人填時：公休或不是負責人 → 不能建立（資料庫也會擋）
+  const dutyBlock: "holiday" | "notDuty" | null = today
+    ? null
+    : todayDuty?.holiday
+    ? "holiday"
+    : !canFillDay(todayDuty, teacher.id)
+    ? "notDuty"
+    : null;
+  const readOnly = !edit.canEdit || dutyBlock !== null;
+
+  async function loadSchedule() {
+    const start = todayISO();
+    setSchedule(await fetchSchedule(start, addDaysISO(start, 13)));
+  }
 
   async function load() {
-    const [r, tk, ro, l, p] = await Promise.all([
+    const start = todayISO();
+    const [r, tk, ro, l, p, sc, wo] = await Promise.all([
       fetchRooms(),
       fetchTasks(),
       fetchRoster(),
       fetchClosingList(),
       fetchPettySummary(),
+      fetchSchedule(start, addDaysISO(start, 13)),
+      fetchWorkerOptions(),
     ]);
     setRooms(r);
     setTasks(tk);
     setRoster(ro);
     setList(l);
     setPetty(p);
+    setSchedule(sc);
+    setWorkerOptions(wo);
     const t = l.find((x) => x.close_date === todayISO());
     if (t) {
       setChecked(new Set(t.rooms_checked));
@@ -128,7 +162,7 @@ export default function Closing({ teacher }: { teacher: Teacher }) {
       // 最常見：別人剛好先存了、或已超過 8 小時 → 重新載入後會變成唯讀
       setErr(
         /row-level security|violates/i.test(error)
-          ? "今天的打烊已由其他人填寫，或已超過可修改時間，無法再修改。"
+          ? "無法儲存：今天不是你負責打烊、已由其他人填寫，或已超過可修改時間。"
           : error
       );
       await load();
@@ -147,22 +181,58 @@ export default function Closing({ teacher }: { teacher: Teacher }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="text-sm text-black/55">
-            打烊前逐項檢查、盤點零用金。負責人：
-            <b className="text-navy">
-              {today ? today.closer_name ?? "—" : teacher.name}
-            </b>
+            今天打烊負責人：
+            <b className="text-navy">{todayDuty ? dutyLabel(todayDuty) : "—"}</b>
+            {today && (
+              <span className="ml-2 text-xs text-black/45">
+                （由 {today.closer_name ?? "—"} 填寫）
+              </span>
+            )}
           </p>
-          <p className="text-xs text-black/40">{todayISO()}</p>
+          <p className="text-xs text-black/40">
+            {todayISO()}
+            {todayDuty ? `（週${WEEKDAY_LABEL[todayDuty.weekday]}）` : ""}
+          </p>
         </div>
-        {today && (
-          <span className="rounded-full bg-[#8CA07C]/15 px-3 py-1 text-xs font-medium text-[#5f7a4f]">
-            今日已記錄
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {today && (
+            <span className="rounded-full bg-[#8CA07C]/15 px-3 py-1 text-xs font-medium text-[#5f7a4f]">
+              今日已記錄
+            </span>
+          )}
+          {/* 宇群：一鍵標今天公休（今天還沒人填、也不是固定公休時） */}
+          {teacher.is_admin && !today && todayDuty && !todayDuty.fixed_holiday && (
+            <button
+              onClick={async () => {
+                const next = !todayDuty.holiday;
+                if (next && !confirm("標記今天公休？今天就不用打烊，也不會提醒。")) return;
+                const { error } = await setHoliday(todayDuty.day, next);
+                if (error) return alert(error);
+                await loadSchedule();
+              }}
+              className="rounded-full border border-black/15 px-3 py-1 text-xs text-black/60 hover:border-black/40"
+            >
+              {todayDuty.holiday ? "取消今天公休" : "🏖️ 今天公休"}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 編輯權限說明 */}
-      <EditBanner edit={edit} closerName={today?.closer_name ?? null} />
+      <EditBanner
+        edit={edit}
+        dutyBlock={dutyBlock}
+        closerName={today?.closer_name ?? null}
+        dutyName={todayDuty ? dutyLabel(todayDuty) : null}
+      />
+
+      {/* 近期排班：指派工讀生 / 標公休 */}
+      <ScheduleList
+        schedule={schedule}
+        teacher={teacher}
+        workers={workerOptions}
+        onChanged={loadSchedule}
+      />
 
       {/* 本週廁所清潔 */}
       <Card className="flex items-center gap-3">
@@ -400,13 +470,131 @@ function ChecklistCard({
   );
 }
 
+// 近期 14 天排班：輪值的人／宇群可指派工讀生；宇群可標公休
+function ScheduleList({
+  schedule,
+  teacher,
+  workers,
+  onChanged,
+}: {
+  schedule: ScheduleDay[];
+  teacher: Teacher;
+  workers: { id: string; name: string }[];
+  onChanged: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busyDay, setBusyDay] = useState<string | null>(null);
+  const admin = teacher.is_admin;
+  const mine = schedule.filter(
+    (s) => !s.holiday && (s.rota_id === teacher.id || s.worker_id === teacher.id)
+  ).length;
+
+  async function run(day: string, fn: () => Promise<{ error: string | null }>) {
+    setBusyDay(day);
+    const { error } = await fn();
+    setBusyDay(null);
+    if (error) return alert(error);
+    await onChanged();
+  }
+
+  return (
+    <Card className="p-0">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left"
+      >
+        <span className="text-sm font-semibold text-navy">📅 近期排班（14 天）</span>
+        {mine > 0 && (
+          <span className="rounded-full bg-navy/10 px-2 py-0.5 text-xs font-medium text-navy">
+            你負責 {mine} 天
+          </span>
+        )}
+        <span className="ml-auto text-xs text-black/40">{open ? "▲ 收合" : "▼ 展開"}</span>
+      </button>
+      {open && (
+        <div className="divide-y divide-black/5 border-t border-black/5">
+          {schedule.map((s) => {
+            const [, m, d] = s.day.split("-").map(Number);
+            const canAssign = !s.holiday && (admin || s.rota_id === teacher.id);
+            const isMe = s.rota_id === teacher.id || s.worker_id === teacher.id;
+            return (
+              <div
+                key={s.day}
+                className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5 text-sm ${
+                  s.holiday ? "bg-black/[0.02] text-black/40" : ""
+                }`}
+              >
+                <span className={`w-20 shrink-0 tabular-nums ${isMe && !s.holiday ? "font-semibold text-navy" : ""}`}>
+                  {m}/{d}（{WEEKDAY_LABEL[s.weekday]}）
+                </span>
+                {s.holiday ? (
+                  <span className="flex-1">{s.fixed_holiday ? "固定公休" : "🏖️ 公休"}</span>
+                ) : (
+                  <span className="min-w-0 flex-1 truncate">
+                    {s.rota_name ?? "未設定"}
+                    {s.worker_name && !canAssign && (
+                      <span className="text-black/50"> → 工讀生 {s.worker_name}</span>
+                    )}
+                  </span>
+                )}
+                {canAssign && (
+                  <select
+                    value={s.worker_id ?? ""}
+                    disabled={busyDay === s.day}
+                    onChange={(e) =>
+                      run(s.day, () => assignWorker(s.day, e.target.value || null))
+                    }
+                    className="rounded-lg border border-black/15 bg-white px-2 py-1 text-xs text-black/70"
+                  >
+                    <option value="">自己打烊</option>
+                    {workers.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        指派：{w.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {admin && !s.fixed_holiday && (
+                  <button
+                    disabled={busyDay === s.day}
+                    onClick={() => run(s.day, () => setHoliday(s.day, !s.holiday))}
+                    className="text-xs text-black/45 underline decoration-dotted underline-offset-2 hover:text-navy"
+                  >
+                    {s.holiday ? "取消公休" : "設公休"}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function EditBanner({
   edit,
+  dutyBlock,
   closerName,
+  dutyName,
 }: {
   edit: ReturnType<typeof closingEditState>;
+  dutyBlock: "holiday" | "notDuty" | null;
   closerName: string | null;
+  dutyName: string | null;
 }) {
+  if (dutyBlock === "holiday")
+    return (
+      <p className="rounded-xl bg-[#8CA07C]/10 px-3 py-2 text-xs text-[#5f7a4f]">
+        🏖️ 今天公休，不需要打烊，也不會提醒。
+      </p>
+    );
+  if (dutyBlock === "notDuty")
+    return (
+      <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700">
+        🔒 今天由 {dutyName ?? "負責人"} 打烊，你只能檢視。
+      </p>
+    );
   if (edit.canEdit) {
     return (
       <p className="rounded-xl bg-navy/5 px-3 py-2 text-xs text-navy/80">

@@ -10,6 +10,7 @@ export type NotificationKind =
   | "reminder"
   | "acc_todo"
   | "monthly"
+  | "closing"
   | "test";
 
 export type NotificationLog = {
@@ -32,6 +33,7 @@ export const KIND_LABEL: Record<NotificationKind, string> = {
   reminder: "排課提醒",
   acc_todo: "記帳待辦",
   monthly: "月結報表",
+  closing: "打烊未填提醒",
   test: "測試",
 };
 
