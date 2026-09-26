@@ -122,10 +122,10 @@ export function addDaysISO(iso: string, n: number): string {
   ).padStart(2, "0")}`;
 }
 
-// 當天負責人（顯示用）：有指派工讀生時「工讀生（輪值的人指派）」
+// 當天負責人（顯示用）：有指派代班時「代班的人（代 輪值的人）」
 export function dutyLabel(s: ScheduleDay): string {
   if (s.holiday) return "公休";
-  if (s.worker_name && s.rota_name) return `${s.worker_name}（${s.rota_name}指派）`;
+  if (s.worker_name && s.rota_name) return `${s.worker_name}（代${s.rota_name}）`;
   return s.worker_name ?? s.rota_name ?? "未設定";
 }
 
@@ -167,14 +167,19 @@ export async function assignWorker(
   return { error: error?.message ?? null };
 }
 
-// 可指派的工讀生名單（記帳成員讀得到 teachers；工讀生本人拿到空陣列也沒關係）
-export async function fetchWorkerOptions(): Promise<{ id: string; name: string }[]> {
+// 可被指派打烊的人：記帳成員（宇群/美君/奕寬）＋工讀生。
+// 宇群可指派全部；輪值的人只能指派工讀生（資料庫同樣把關）。
+// 記帳成員讀得到 teachers；工讀生本人拿到空陣列也沒關係（工讀生不會指派）。
+export type AssignableOption = { id: string; name: string; is_worker: boolean };
+
+export async function fetchAssignableOptions(): Promise<AssignableOption[]> {
   const { data } = await supabase
     .from("teachers")
-    .select("id,name")
-    .eq("is_worker", true)
+    .select("id,name,is_worker")
+    .or("is_worker.eq.true,can_accounting.eq.true")
+    .order("is_worker")
     .order("name");
-  return (data ?? []) as { id: string; name: string }[];
+  return (data ?? []) as AssignableOption[];
 }
 
 export async function fetchRota(): Promise<RotaRow[]> {

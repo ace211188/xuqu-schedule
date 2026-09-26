@@ -139,7 +139,9 @@ begin
 end;
 $$;
 
--- 當天輪值的人或宇群：指派／取消指派工讀生（p_worker = null 取消）
+-- 指派代班（p_worker = null 取消）：
+--   宇群（管理者）可指派任何有打烊權限的人（記帳成員或工讀生）；當天輪值的人只能指派工讀生
+--   （欄位名 assigned_worker_id 沿用，實際可能是工讀生或記帳成員）
 create or replace function public.closing_assign_worker(p_day date, p_worker uuid)
 returns void language plpgsql security definer set search_path = public as $$
 declare
@@ -151,11 +153,17 @@ begin
   select teacher_id into v_rota
     from public.closing_rota where weekday = extract(dow from p_day)::int;
   if not (public.is_admin() or (v_rota is not null and v_rota = auth.uid())) then
-    raise exception '只有當天輪值的人或管理者能指派工讀生';
+    raise exception '只有當天輪值的人或管理者能指派';
   end if;
-  if p_worker is not null
-     and not exists (select 1 from public.teachers where id = p_worker and is_worker) then
-    raise exception '只能指派工讀生';
+  if p_worker is not null then
+    if public.is_admin() then
+      if not exists (select 1 from public.teachers
+                      where id = p_worker and (is_worker or can_accounting)) then
+        raise exception '只能指派有打烊權限的人（美君、奕寬、工讀生…）';
+      end if;
+    elsif not exists (select 1 from public.teachers where id = p_worker and is_worker) then
+      raise exception '只能指派工讀生';
+    end if;
   end if;
   insert into public.closing_days (day, assigned_worker_id, updated_by)
   values (p_day, p_worker, auth.uid())

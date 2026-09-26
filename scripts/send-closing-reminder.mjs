@@ -1,6 +1,6 @@
 // 打烊未填提醒（GitHub Actions 每天 21:30 台北執行）
 // 規則：今天不是公休（每週固定公休或當天標記）且還沒有打烊紀錄
-//       → 推播給「當天輪值的人」＋「被指派的工讀生」＋宇群
+//       → 推播給「當天輪值的人」＋「被指派代班的人」＋宇群
 // MODE: run(正式檢查後推播) | test(只推一則測試給宇群)
 import webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
@@ -67,7 +67,7 @@ if (MODE === "test") {
   const rotaName = rota?.teacher_id ? nameOf(rota.teacher_id) : null;
   const workerName = dayRow?.assigned_worker_id ? nameOf(dayRow.assigned_worker_id) : null;
   const who = workerName
-    ? `${workerName}（${rotaName ?? "輪值"}指派）`
+    ? `${workerName}（代${rotaName ?? "輪值"}）`
     : rotaName ?? "今天的負責人";
 
   dutyIds.forEach((id) => recipients.add(id));

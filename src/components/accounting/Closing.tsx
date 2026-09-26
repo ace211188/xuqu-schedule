@@ -17,7 +17,7 @@ import {
   fetchRoster,
   fetchSchedule,
   fetchTasks,
-  fetchWorkerOptions,
+  fetchAssignableOptions,
   saveClosing,
   setHoliday,
   weekDuty,
@@ -27,6 +27,7 @@ import {
   type PettySummary,
   type RosterEntry,
   type ScheduleDay,
+  type AssignableOption,
 } from "@/lib/closing";
 import { fmtTime } from "@/lib/attendance";
 import { Card, Empty, Field, Money, PrimaryBtn, inputCls } from "./ui";
@@ -39,7 +40,7 @@ export default function Closing({ teacher }: { teacher: Teacher }) {
   const [list, setList] = useState<ClosingRecord[]>([]);
   const [petty, setPetty] = useState<PettySummary | null>(null);
   const [schedule, setSchedule] = useState<ScheduleDay[]>([]);
-  const [workerOptions, setWorkerOptions] = useState<{ id: string; name: string }[]>([]);
+  const [workerOptions, setWorkerOptions] = useState<AssignableOption[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [checked, setChecked] = useState<Set<string>>(new Set());
@@ -92,7 +93,7 @@ export default function Closing({ teacher }: { teacher: Teacher }) {
       fetchClosingList(),
       fetchPettySummary(),
       fetchSchedule(start, addDaysISO(start, 13)),
-      fetchWorkerOptions(),
+      fetchAssignableOptions(),
     ]);
     setRooms(r);
     setTasks(tk);
@@ -470,7 +471,7 @@ function ChecklistCard({
   );
 }
 
-// 近期 14 天排班：輪值的人／宇群可指派工讀生；宇群可標公休
+// 近期 14 天排班：宇群可指派任何有打烊權限的人；輪值的人只能指派工讀生；宇群可標公休
 function ScheduleList({
   schedule,
   teacher,
@@ -479,7 +480,7 @@ function ScheduleList({
 }: {
   schedule: ScheduleDay[];
   teacher: Teacher;
-  workers: { id: string; name: string }[];
+  workers: AssignableOption[];
   onChanged: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
@@ -533,7 +534,7 @@ function ScheduleList({
                   <span className="min-w-0 flex-1 truncate">
                     {s.rota_name ?? "未設定"}
                     {s.worker_name && !canAssign && (
-                      <span className="text-black/50"> → 工讀生 {s.worker_name}</span>
+                      <span className="text-black/50"> → 代班 {s.worker_name}</span>
                     )}
                   </span>
                 )}
@@ -546,12 +547,21 @@ function ScheduleList({
                     }
                     className="rounded-lg border border-black/15 bg-white px-2 py-1 text-xs text-black/70"
                   >
-                    <option value="">自己打烊</option>
-                    {workers.map((w) => (
-                      <option key={w.id} value={w.id}>
-                        指派：{w.name}
-                      </option>
-                    ))}
+                    <option value="">
+                      {s.rota_name ? `${s.rota_name}自己打烊` : "不指派"}
+                    </option>
+                    {workers
+                      // 宇群可指派所有人；輪值的人只能指派工讀生（目前已指派的人照樣列出，選單才顯示正確）。不列出輪值本人
+                      .filter(
+                        (w) =>
+                          (admin || w.is_worker || w.id === s.worker_id) && w.id !== s.rota_id
+                      )
+                      .map((w) => (
+                        <option key={w.id} value={w.id}>
+                          指派：{w.name}
+                          {w.is_worker ? "（工讀生）" : ""}
+                        </option>
+                      ))}
                   </select>
                 )}
                 {admin && !s.fixed_holiday && (
