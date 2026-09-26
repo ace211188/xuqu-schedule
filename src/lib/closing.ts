@@ -10,6 +10,9 @@ export type ClosingRoom = {
   active: boolean;
 };
 
+// 打烊工作（倒垃圾、消毒拖鞋…），結構同教室清單
+export type ClosingTask = ClosingRoom;
+
 export type RosterEntry = {
   id: string;
   name: string;
@@ -24,6 +27,8 @@ export type ClosingRecord = {
   closer_name: string | null; // 填寫者名字（由 closing_list RPC 帶出）
   rooms_checked: string[];
   rooms_total: number;
+  tasks_checked: string[];
+  tasks_total: number;
   petty_expected: number | null;
   petty_actual: number | null;
   today_change: number;
@@ -99,6 +104,16 @@ export async function fetchRooms(): Promise<ClosingRoom[]> {
   return (data ?? []) as ClosingRoom[];
 }
 
+export async function fetchTasks(): Promise<ClosingTask[]> {
+  const { data } = await supabase
+    .from("closing_tasks")
+    .select("*")
+    .eq("active", true)
+    .order("sort_order")
+    .order("created_at");
+  return (data ?? []) as ClosingTask[];
+}
+
 export async function fetchRoster(): Promise<RosterEntry[]> {
   const { data } = await supabase
     .from("toilet_roster")
@@ -115,6 +130,8 @@ export async function fetchClosingList(limit = 60): Promise<ClosingRecord[]> {
   return ((data ?? []) as ClosingRecord[]).map((r) => ({
     ...r,
     rooms_checked: r.rooms_checked ?? [],
+    tasks_checked: r.tasks_checked ?? [],
+    tasks_total: r.tasks_total ?? 0,
     petty_expected: r.petty_expected == null ? null : Number(r.petty_expected),
     petty_actual: r.petty_actual == null ? null : Number(r.petty_actual),
     today_change: Number(r.today_change ?? 0),
@@ -142,6 +159,8 @@ export async function saveClosing(p: {
   closedBy: string;
   roomsChecked: string[];
   roomsTotal: number;
+  tasksChecked: string[];
+  tasksTotal: number;
   pettyExpected: number | null;
   pettyActual: number | null;
   todayChange: number;
@@ -153,6 +172,8 @@ export async function saveClosing(p: {
       closed_by: p.closedBy,
       rooms_checked: p.roomsChecked,
       rooms_total: p.roomsTotal,
+      tasks_checked: p.tasksChecked,
+      tasks_total: p.tasksTotal,
       petty_expected: p.pettyExpected,
       petty_actual: p.pettyActual,
       today_change: p.todayChange,
@@ -174,6 +195,18 @@ export async function addRoom(name: string, sortOrder: number): Promise<Res> {
 
 export async function removeRoom(id: string): Promise<Res> {
   const { error } = await supabase.from("closing_rooms").delete().eq("id", id);
+  return { error: error?.message ?? null };
+}
+
+export async function addTask(name: string, sortOrder: number): Promise<Res> {
+  const { error } = await supabase
+    .from("closing_tasks")
+    .insert({ name, sort_order: sortOrder });
+  return { error: error?.message ?? null };
+}
+
+export async function removeTask(id: string): Promise<Res> {
+  const { error } = await supabase.from("closing_tasks").delete().eq("id", id);
   return { error: error?.message ?? null };
 }
 

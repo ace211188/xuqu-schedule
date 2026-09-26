@@ -10,10 +10,12 @@ import {
   fetchPettySummary,
   fetchRooms,
   fetchRoster,
+  fetchTasks,
   saveClosing,
   weekDuty,
   type ClosingRecord,
   type ClosingRoom,
+  type ClosingTask,
   type PettySummary,
   type RosterEntry,
 } from "@/lib/closing";
@@ -23,12 +25,14 @@ import { Card, Empty, Field, Money, PrimaryBtn, inputCls } from "./ui";
 // 打烊：記帳成員與工讀生共用。資料只從打烊專用的表與 RPC 讀，不需要記帳權限。
 export default function Closing({ teacher }: { teacher: Teacher }) {
   const [rooms, setRooms] = useState<ClosingRoom[]>([]);
+  const [tasks, setTasks] = useState<ClosingTask[]>([]);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [list, setList] = useState<ClosingRecord[]>([]);
   const [petty, setPetty] = useState<PettySummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [tasksChecked, setTasksChecked] = useState<Set<string>>(new Set());
   const [pettyActual, setPettyActual] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -51,19 +55,22 @@ export default function Closing({ teacher }: { teacher: Teacher }) {
   const readOnly = !edit.canEdit;
 
   async function load() {
-    const [r, ro, l, p] = await Promise.all([
+    const [r, tk, ro, l, p] = await Promise.all([
       fetchRooms(),
+      fetchTasks(),
       fetchRoster(),
       fetchClosingList(),
       fetchPettySummary(),
     ]);
     setRooms(r);
+    setTasks(tk);
     setRoster(ro);
     setList(l);
     setPetty(p);
     const t = l.find((x) => x.close_date === todayISO());
     if (t) {
       setChecked(new Set(t.rooms_checked));
+      setTasksChecked(new Set(t.tasks_checked));
       setPettyActual(t.petty_actual != null ? String(t.petty_actual) : "");
       setNote(t.note ?? "");
     }
@@ -85,20 +92,21 @@ export default function Closing({ teacher }: { teacher: Teacher }) {
     : petty?.today_change ?? 0;
   const hasPetty = readOnly ? today?.petty_expected != null : !!petty?.has_petty;
 
-  function toggleRoom(name: string) {
-    if (readOnly) return;
-    setChecked((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
+  function toggleIn(setter: typeof setChecked) {
+    return (name: string) => {
+      if (readOnly) return;
+      setter((prev) => {
+        const next = new Set(prev);
+        if (next.has(name)) next.delete(name);
+        else next.add(name);
+        return next;
+      });
+    };
   }
 
   const actualNum = pettyActual.trim() === "" ? null : Number(pettyActual);
   const diff =
     actualNum != null && pettyExpected != null ? actualNum - pettyExpected : null;
-  const allRoomsOk = rooms.length > 0 && rooms.every((r) => checked.has(r.name));
 
   async function save() {
     if (readOnly) return;
@@ -108,6 +116,8 @@ export default function Closing({ teacher }: { teacher: Teacher }) {
       closedBy: teacher.id,
       roomsChecked: rooms.filter((r) => checked.has(r.name)).map((r) => r.name),
       roomsTotal: rooms.length,
+      tasksChecked: tasks.filter((t) => tasksChecked.has(t.name)).map((t) => t.name),
+      tasksTotal: tasks.length,
       pettyExpected: petty?.petty_expected ?? null,
       pettyActual: actualNum,
       todayChange: petty?.today_change ?? 0,
@@ -166,55 +176,24 @@ export default function Closing({ teacher }: { teacher: Teacher }) {
       </Card>
 
       {/* 教室檢查清單 */}
-      <Card>
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-sm font-semibold text-navy">
-            教室檢查（電燈冷氣已關）
-          </span>
-          <span
-            className={`text-xs font-medium ${
-              allRoomsOk ? "text-[#5f7a4f]" : "text-black/45"
-            }`}
-          >
-            {checked.size}/{rooms.length}
-            {allRoomsOk ? " ✓ 全部完成" : ""}
-          </span>
-        </div>
-        {rooms.length === 0 ? (
-          <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-            還沒有教室清單，請管理員到「設定 → 教室清單」新增。
-          </p>
-        ) : (
-          <div className="grid gap-2 sm:grid-cols-2">
-            {rooms.map((r) => {
-              const on = checked.has(r.name);
-              return (
-                <button
-                  key={r.id}
-                  onClick={() => toggleRoom(r.name)}
-                  disabled={readOnly}
-                  className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm transition enabled:active:scale-[0.99] disabled:cursor-default ${
-                    on
-                      ? "border-[#8CA07C]/50 bg-[#8CA07C]/10 text-[#3b352f]"
-                      : "border-black/15 bg-white text-black/60"
-                  }`}
-                >
-                  <span
-                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-xs ${
-                      on
-                        ? "border-[#8CA07C] bg-[#8CA07C] text-white"
-                        : "border-black/25"
-                    }`}
-                  >
-                    {on ? "✓" : ""}
-                  </span>
-                  <span className="truncate font-medium">{r.name}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </Card>
+      <ChecklistCard
+        title="教室檢查（電燈冷氣已關）"
+        items={rooms}
+        checked={checked}
+        onToggle={toggleIn(setChecked)}
+        readOnly={readOnly}
+        emptyHint="還沒有教室清單，請管理員到「設定 → 打烊設定」新增教室。"
+      />
+
+      {/* 打烊工作 */}
+      <ChecklistCard
+        title="打烊工作"
+        items={tasks}
+        checked={tasksChecked}
+        onToggle={toggleIn(setTasksChecked)}
+        readOnly={readOnly}
+        emptyHint="還沒有打烊工作，請管理員到「設定 → 打烊設定」新增（例：倒垃圾）。"
+      />
 
       {/* 零用金盤點比對 */}
       <Card className="space-y-3">
@@ -320,6 +299,16 @@ export default function Closing({ teacher }: { teacher: Teacher }) {
                       <span>
                         教室 {h.rooms_checked.length}/{h.rooms_total}
                       </span>
+                      {h.tasks_total > 0 && (
+                        <span
+                          className={
+                            h.tasks_checked.length < h.tasks_total ? "text-brand" : ""
+                          }
+                          title={h.tasks_checked.join("、")}
+                        >
+                          工作 {h.tasks_checked.length}/{h.tasks_total}
+                        </span>
+                      )}
                       <span>找錢 {fmtMoney(h.today_change)}</span>
                       {d != null && (
                         <span className={d === 0 ? "text-[#5f7a4f]" : "text-brand"}>
@@ -343,6 +332,71 @@ export default function Closing({ teacher }: { teacher: Teacher }) {
         )}
       </div>
     </div>
+  );
+}
+
+// 勾選清單卡片（教室檢查、打烊工作共用）
+function ChecklistCard({
+  title,
+  items,
+  checked,
+  onToggle,
+  readOnly,
+  emptyHint,
+}: {
+  title: string;
+  items: { id: string; name: string }[];
+  checked: Set<string>;
+  onToggle: (name: string) => void;
+  readOnly: boolean;
+  emptyHint: string;
+}) {
+  const done = items.filter((i) => checked.has(i.name)).length;
+  const allOk = items.length > 0 && done === items.length;
+  return (
+    <Card>
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-sm font-semibold text-navy">{title}</span>
+        <span
+          className={`text-xs font-medium ${allOk ? "text-[#5f7a4f]" : "text-black/45"}`}
+        >
+          {done}/{items.length}
+          {allOk ? " ✓ 全部完成" : ""}
+        </span>
+      </div>
+      {items.length === 0 ? (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          {emptyHint}
+        </p>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {items.map((it) => {
+            const on = checked.has(it.name);
+            return (
+              <button
+                key={it.id}
+                onClick={() => onToggle(it.name)}
+                disabled={readOnly}
+                className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm transition enabled:active:scale-[0.99] disabled:cursor-default ${
+                  on
+                    ? "border-[#8CA07C]/50 bg-[#8CA07C]/10 text-[#3b352f]"
+                    : "border-black/15 bg-white text-black/60"
+                }`}
+              >
+                <span
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-xs ${
+                    on ? "border-[#8CA07C] bg-[#8CA07C] text-white" : "border-black/25"
+                  }`}
+                >
+                  {on ? "✓" : ""}
+                </span>
+                <span className="truncate font-medium">{it.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </Card>
   );
 }
 

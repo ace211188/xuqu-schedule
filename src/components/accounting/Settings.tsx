@@ -31,12 +31,16 @@ import {
 import {
   addRoom,
   addRosterEntry,
+  addTask,
   fetchRooms,
   fetchRoster,
+  fetchTasks,
   removeRoom,
   removeRosterEntry,
+  removeTask,
   weekDuty,
   type ClosingRoom,
+  type ClosingTask,
   type RosterEntry,
 } from "@/lib/closing";
 import {
@@ -624,14 +628,26 @@ function AttendanceNetworks() {
 // ── 打烊：教室清單 + 廁所清潔輪值 ──────────────────────
 function ClosingConfig() {
   const [rooms, setRooms] = useState<ClosingRoom[]>([]);
+  const [tasks, setTasks] = useState<ClosingTask[]>([]);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [roomName, setRoomName] = useState("");
+  const [taskName, setTaskName] = useState("");
   const [personName, setPersonName] = useState("");
 
   const load = async () => {
     setRooms(await fetchRooms());
+    setTasks(await fetchTasks());
     setRoster(await fetchRoster());
   };
+
+  async function onAddTask() {
+    const n = taskName.trim();
+    if (!n) return;
+    const { error } = await addTask(n, tasks.length);
+    if (error) return alert(error);
+    setTaskName("");
+    await load();
+  }
   useEffect(() => {
     load();
   }, []);
@@ -695,6 +711,47 @@ function ClosingConfig() {
               placeholder="例：A 教室"
             />
             <GhostBtn onClick={onAddRoom}>新增</GhostBtn>
+          </div>
+        </Card>
+
+        {/* 打烊工作 */}
+        <Card>
+          <div className="mb-2 text-xs font-medium text-black/50">
+            打烊工作（每天打烊逐項勾選）
+          </div>
+          <div className="mb-2 flex flex-wrap gap-2">
+            {tasks.length === 0 && (
+              <span className="text-xs text-black/35">還沒有打烊工作</span>
+            )}
+            {tasks.map((t) => (
+              <span
+                key={t.id}
+                className="flex items-center gap-1 rounded-full border border-black/15 px-2.5 py-1 text-sm text-black/70"
+              >
+                {t.name}
+                <button
+                  onClick={async () => {
+                    if (!confirm(`移除打烊工作「${t.name}」？`)) return;
+                    await removeTask(t.id);
+                    await load();
+                  }}
+                  className="text-black/30 hover:text-brand"
+                  aria-label="移除"
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <input
+              className={inputCls}
+              value={taskName}
+              onChange={(e) => setTaskName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && onAddTask()}
+              placeholder="例：倒垃圾"
+            />
+            <GhostBtn onClick={onAddTask}>新增</GhostBtn>
           </div>
         </Card>
 
