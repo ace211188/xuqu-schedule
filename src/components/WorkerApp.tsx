@@ -4,7 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import type { Teacher } from "@/lib/useAuth";
 import {
   checkIn,
+  checkOut,
   fetchAttendanceStatus,
+  fmtDuration,
   fmtTime,
   type AttendanceStatus,
 } from "@/lib/attendance";
@@ -86,19 +88,28 @@ function CheckInPanel() {
 
   const onSite = status?.onSite ?? false;
   const checkedIn = status?.today.checkedIn ?? false;
+  const checkedOut = status?.today.checkedOut ?? false;
+  // 下一個動作：簽到 → 簽退 → 完成
+  const action = !checkedIn ? "簽到" : !checkedOut ? "簽退" : null;
 
-  async function doCheckIn() {
+  async function run(fn: typeof checkIn) {
     setBusy(true);
     setErr(null);
-    const { today, error } = await checkIn();
+    const { today, error } = await fn();
     setBusy(false);
     if (error) {
       setErr(error);
-      // 失敗時把最新網路狀態抓回來（可能是網路不對）
+      // 失敗時把最新網路／出勤狀態抓回來（可能是網路不對）
       void refresh();
       return;
     }
     setStatus((s) => (s ? { ...s, onSite: true, today: today ?? s.today } : s));
+  }
+
+  function doCheckOut() {
+    if (!confirm(`確定要簽退嗎？（現在 ${fmtTime(new Date().toISOString())}）\n簽退後今天就不能再改。`))
+      return;
+    void run(checkOut);
   }
 
   return (
@@ -118,8 +129,8 @@ function CheckInPanel() {
             <span className="text-lg">{onSite ? "✅" : "📶"}</span>
             <span className="flex-1">
               {onSite
-                ? "已連上教室網路，可以簽到"
-                : "請先連上教室網路後再簽到"}
+                ? `已連上教室網路${action ? `，可以${action}` : ""}`
+                : `請先連上教室網路後再${action ?? "簽到"}`}
             </span>
             <button
               onClick={refresh}
@@ -129,20 +140,10 @@ function CheckInPanel() {
             </button>
           </div>
 
-          {/* 今天狀態 / 簽到大按鈕 */}
-          {checkedIn ? (
-            <div className="flex flex-col items-center gap-3 py-6 text-center">
-              <div className="flex h-28 w-28 items-center justify-center rounded-full bg-[#8CA07C]/15 text-5xl">
-                ✓
-              </div>
-              <p className="text-lg font-semibold text-navy">今天已簽到</p>
-              <p className="text-sm text-black/55">
-                簽到時間 {fmtTime(status?.today.checkInAt)}
-              </p>
-            </div>
-          ) : (
+          {/* 今天狀態 / 簽到・簽退大按鈕 */}
+          {!checkedIn ? (
             <button
-              onClick={doCheckIn}
+              onClick={() => void run(checkIn)}
               disabled={!onSite || busy}
               className="flex h-40 w-40 flex-col items-center justify-center rounded-full bg-brand text-white shadow-lg transition active:scale-95 disabled:cursor-not-allowed disabled:bg-black/20 disabled:text-black/40"
             >
@@ -151,11 +152,41 @@ function CheckInPanel() {
                 {busy ? "簽到中…" : "簽到"}
               </span>
             </button>
+          ) : !checkedOut ? (
+            <div className="flex flex-col items-center gap-4">
+              <p className="text-sm text-black/55">
+                ✓ 已簽到 <b className="text-navy">{fmtTime(status?.today.checkInAt)}</b>
+              </p>
+              <button
+                onClick={doCheckOut}
+                disabled={!onSite || busy}
+                className="flex h-40 w-40 flex-col items-center justify-center rounded-full bg-navy text-white shadow-lg transition active:scale-95 disabled:cursor-not-allowed disabled:bg-black/20 disabled:text-black/40"
+              >
+                <span className="text-3xl">👋</span>
+                <span className="mt-1 text-lg font-bold">
+                  {busy ? "簽退中…" : "簽退"}
+                </span>
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3 py-6 text-center">
+              <div className="flex h-28 w-28 items-center justify-center rounded-full bg-[#8CA07C]/15 text-5xl">
+                ✓
+              </div>
+              <p className="text-lg font-semibold text-navy">今天已簽退，辛苦了！</p>
+              <p className="text-sm text-black/55">
+                簽到 {fmtTime(status?.today.checkInAt)}・簽退{" "}
+                {fmtTime(status?.today.checkOutAt)}
+              </p>
+              <p className="text-sm font-medium text-navy">
+                工時 {fmtDuration(status?.today.checkInAt, status?.today.checkOutAt)}
+              </p>
+            </div>
           )}
 
-          {!onSite && !checkedIn && (
+          {!onSite && action && (
             <p className="text-center text-xs text-black/45">
-              連上教室網路後按「重新檢查」，簽到按鈕就會亮起來。
+              連上教室網路後按「重新檢查」，{action}按鈕就會亮起來。
             </p>
           )}
 

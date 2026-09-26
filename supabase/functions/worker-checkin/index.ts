@@ -6,7 +6,7 @@
 // 模式（body.mode）：
 //   status         －回傳目前是否在店裡網路、今天簽到狀態（管理員另回傳允許清單）
 //   checkin        －簽到（需在允許網路內）
-//   checkout       －簽退（預留；需在允許網路內）
+//   checkout       －簽退（需在允許網路內；補上最近一筆未簽退的班，過午夜也可）
 //   allow_network  －管理員：把目前這台裝置的網路加入允許清單
 //   remove_network －管理員：移除一筆允許網路
 //   create_invite / list_invites / revoke_invite －管理員：工讀生邀請碼
@@ -96,6 +96,13 @@ function validateWorkerInput(
   if (pw.length < 6) return { error: "密碼至少 6 碼" };
   return { handle, name, password: pw };
 }
+
+// 台灣日期（YYYY-MM-DD）：出勤以台灣的「今天」為準（不用 UTC，否則早上 8 點前會算成前一天）
+function taipeiDate(d = new Date()): string {
+  return new Date(d.getTime() + 8 * 3600_000).toISOString().slice(0, 10);
+}
+// 簽退時往回找「還沒簽退的班」的時間範圍（涵蓋打烊做到過午夜的情況）
+const OPEN_SHIFT_HOURS = 16;
 
 function todayShape(row: Record<string, unknown> | null) {
   return {
@@ -207,13 +214,30 @@ Deno.serve(async (req) => {
     onSite = !!hit;
   }
 
-  // 今天的出勤
-  async function loadToday() {
+  // 還沒簽退的班（最近 OPEN_SHIFT_HOURS 小時內簽到、尚未簽退）
+  async function findOpenShift() {
+    const since = new Date(Date.now() - OPEN_SHIFT_HOURS * 3600_000).toISOString();
     const { data } = await admin
       .from("worker_attendance")
-      .select("check_in_at,check_out_at")
+      .select("work_date,check_in_at,check_out_at")
       .eq("worker_id", uid)
-      .eq("work_date", new Date().toISOString().slice(0, 10))
+      .is("check_out_at", null)
+      .gte("check_in_at", since)
+      .order("check_in_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data ?? null;
+  }
+
+  // 目前的出勤：優先顯示還沒簽退的班，否則顯示台灣今天那一筆
+  async function loadToday() {
+    const open = await findOpenShift();
+    if (open) return open;
+    const { data } = await admin
+      .from("worker_attendance")
+      .select("work_date,check_in_at,check_out_at")
+      .eq("worker_id", uid)
+      .eq("work_date", taipeiDate())
       .maybeSingle();
     return data ?? null;
   }
@@ -244,10 +268,12 @@ Deno.serve(async (req) => {
         { error: "請先連上教室網路後再簽到", ip, onSite: false },
         403
       );
+    // 還有沒簽退的班就不重複簽到（例如過午夜才打烊）
+    const open = await findOpenShift();
+    if (open) return json({ ok: true, onSite: true, today: todayShape(open) });
     // 一人一天一筆；已簽到就保留原本那筆（不覆蓋簽到時間）
-    const dateStr = new Date().toISOString().slice(0, 10);
     await admin.from("worker_attendance").upsert(
-      { worker_id: uid, work_date: dateStr, check_in_ip: rawIp },
+      { worker_id: uid, work_date: taipeiDate(), check_in_ip: rawIp },
       { onConflict: "worker_id,work_date", ignoreDuplicates: true }
     );
     const today = await loadToday();
@@ -257,15 +283,32 @@ Deno.serve(async (req) => {
   if (mode === "checkout") {
     if (!onSite)
       return json({ error: "請先連上教室網路後再簽退", onSite: false }, 403);
-    const dateStr = new Date().toISOString().slice(0, 10);
+    // 簽退＝把最近一筆還沒簽退的班補上簽退時間（不看日期，過午夜也能簽退）
+    const open = await findOpenShift();
+    if (!open) {
+      const today = await loadToday();
+      return json(
+        {
+          error: today?.check_out_at ? "今天已經簽退過了" : "還沒簽到，不能簽退",
+          onSite: true,
+          today: todayShape(today),
+        },
+        400
+      );
+    }
     await admin
       .from("worker_attendance")
       .update({ check_out_at: new Date().toISOString(), check_out_ip: rawIp })
       .eq("worker_id", uid)
-      .eq("work_date", dateStr)
+      .eq("work_date", open.work_date)
       .is("check_out_at", null);
-    const today = await loadToday();
-    return json({ ok: true, onSite: true, today: todayShape(today) });
+    const { data: done } = await admin
+      .from("worker_attendance")
+      .select("work_date,check_in_at,check_out_at")
+      .eq("worker_id", uid)
+      .eq("work_date", open.work_date)
+      .maybeSingle();
+    return json({ ok: true, onSite: true, today: todayShape(done ?? null) });
   }
 
   if (mode === "allow_network") {

@@ -184,6 +184,21 @@ export async function registerWithInvite(p: {
   return { handle: (data?.handle as string) ?? null, error };
 }
 
+// 工時顯示：X 小時 Y 分
+export function fmtDuration(
+  fromIso: string | null | undefined,
+  toIso: string | null | undefined
+): string {
+  if (!fromIso || !toIso) return "—";
+  const mins = Math.round(
+    (new Date(toIso).getTime() - new Date(fromIso).getTime()) / 60000
+  );
+  if (!Number.isFinite(mins) || mins < 0) return "—";
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return h > 0 ? `${h} 小時 ${m} 分` : `${m} 分`;
+}
+
 // 時間顯示：HH:MM
 export function fmtTime(iso: string | null | undefined): string {
   if (!iso) return "—";
