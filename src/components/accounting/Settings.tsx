@@ -16,12 +16,16 @@ import {
 import type { AccountingData } from "./useAccountingData";
 import {
   allowCurrentNetwork,
+  createInvite,
   createWorker,
   deleteWorker,
   fetchAttendanceStatus,
+  listInvites,
   listWorkers,
   removeNetwork,
+  revokeInvite,
   type AllowedNetwork,
+  type WorkerInvite,
   type WorkerRow,
 } from "@/lib/attendance";
 import {
@@ -286,8 +290,10 @@ function WorkerAccounts() {
         )}
       </Card>
       <p className="mt-1 text-xs text-black/40">
-        工讀生登入後只會看到「簽到」頁，且需連上店裡網路才能簽到。
+        工讀生登入後可以「簽到」與「打烊」；簽到需連上教室網路。
       </p>
+
+      <WorkerInvites workers={workers} onUsed={load} />
 
       {adding && (
         <WorkerModal
@@ -299,6 +305,129 @@ function WorkerAccounts() {
         />
       )}
     </section>
+  );
+}
+
+// ── 工讀生邀請碼：一次性、7 天內有效；工讀生在登入頁自己設帳號密碼 ──
+function inviteLink(code: string): string {
+  return `${window.location.origin}${window.location.pathname}?invite=${code}`;
+}
+
+function inviteMessage(inv: WorkerInvite): string {
+  const d = new Date(inv.expires_at);
+  return [
+    "序曲音樂學院・工讀生帳號邀請 🎵",
+    `邀請碼：${inv.code}（${d.getMonth() + 1}/${d.getDate()} 前有效，只能用一次）`,
+    "打開下面連結，自己設定登入帳號和密碼：",
+    inviteLink(inv.code),
+  ].join("\n");
+}
+
+function WorkerInvites({
+  workers,
+  onUsed,
+}: {
+  workers: WorkerRow[];
+  onUsed: () => void;
+}) {
+  const [invites, setInvites] = useState<WorkerInvite[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+  const workerName = useMemo(
+    () => new Map(workers.map((w) => [w.id, w.name])),
+    [workers]
+  );
+
+  useEffect(() => {
+    listInvites().then((list) => {
+      setInvites(list);
+      // 有邀請碼剛被用掉 → 順便刷新工讀生名單
+      if (list.some((i) => i.used_by && !workerName.has(i.used_by))) onUsed();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function copy(inv: WorkerInvite) {
+    const text = inviteMessage(inv);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(inv.code);
+      setTimeout(() => setCopied(null), 1500);
+    } catch {
+      window.prompt("複製下面這段傳給工讀生：", text);
+    }
+  }
+
+  async function create() {
+    setBusy(true);
+    const { code, invites: list, error } = await createInvite();
+    setBusy(false);
+    if (error) return alert(error);
+    setInvites(list);
+    const inv = list.find((i) => i.code === code);
+    if (inv) await copy(inv);
+  }
+
+  const [now] = useState(() => Date.now());
+  const status = (i: WorkerInvite) =>
+    i.used_at
+      ? { label: `已使用${i.used_by ? `・${workerName.get(i.used_by) ?? ""}` : ""}`, tone: "text-[#5f7a4f]" }
+      : new Date(i.expires_at).getTime() < now
+      ? { label: "已過期", tone: "text-black/35" }
+      : { label: "未使用", tone: "text-amber-700" };
+
+  return (
+    <div className="mt-3 rounded-2xl border border-navy/15 bg-navy/[0.03] p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-sm font-semibold text-navy">邀請碼（讓工讀生自己設帳密）</div>
+          <p className="text-xs text-black/45">
+            產生後會自動複製成訊息，直接貼到 LINE 給工讀生。7 天內有效、只能用一次。
+          </p>
+        </div>
+        <PrimaryBtn onClick={create} disabled={busy}>
+          {busy ? "產生中…" : "＋ 產生邀請碼"}
+        </PrimaryBtn>
+      </div>
+
+      {invites.length > 0 && (
+        <div className="mt-3 divide-y divide-black/5 rounded-xl border border-black/10 bg-white">
+          {invites.slice(0, 8).map((i) => {
+            const s = status(i);
+            const active = !i.used_at && new Date(i.expires_at).getTime() >= now;
+            return (
+              <div key={i.code} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+                <span className="font-mono font-semibold tracking-widest text-navy">{i.code}</span>
+                <span className={`text-xs ${s.tone}`}>{s.label}</span>
+                {active && (
+                  <span className="text-xs text-black/40">
+                    到 {new Date(i.expires_at).getMonth() + 1}/{new Date(i.expires_at).getDate()}
+                  </span>
+                )}
+                {active && (
+                  <span className="ml-auto flex gap-3">
+                    <button onClick={() => copy(i)} className="text-xs text-navy hover:underline">
+                      {copied === i.code ? "✓ 已複製" : "複製訊息"}
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!confirm(`作廢邀請碼 ${i.code}？`)) return;
+                        const { invites: list, error } = await revokeInvite(i.code);
+                        if (error) return alert(error);
+                        setInvites(list);
+                      }}
+                      className="text-xs text-brand hover:underline"
+                    >
+                      作廢
+                    </button>
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 

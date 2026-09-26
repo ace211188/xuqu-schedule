@@ -34,9 +34,22 @@ type Mode =
   | "remove_network"
   | "list_workers"
   | "create_worker"
-  | "delete_worker";
+  | "delete_worker"
+  | "create_invite"
+  | "list_invites"
+  | "revoke_invite"
+  | "register_with_invite";
 
 export type WorkerRow = { id: string; name: string };
+
+export type WorkerInvite = {
+  code: string;
+  note: string | null;
+  created_at: string;
+  expires_at: string;
+  used_at: string | null;
+  used_by: string | null;
+};
 
 // Edge Function 回傳的錯誤（非 2xx）藏在 error.context，盡量把訊息挖出來
 async function readFnError(error: unknown): Promise<string> {
@@ -61,6 +74,8 @@ async function call(
     name?: string;
     password?: string;
     workerId?: string;
+    code?: string;
+    note?: string;
   }
 ): Promise<{ data: Record<string, unknown> | null; error: string | null }> {
   const { data, error } = await supabase.functions.invoke("worker-checkin", {
@@ -130,6 +145,43 @@ export async function deleteWorker(
 ): Promise<{ error: string | null }> {
   const { error } = await call("delete_worker", { workerId });
   return { error };
+}
+
+// 管理員：工讀生邀請碼（一次性、7 天內有效）
+export async function createInvite(note?: string): Promise<{
+  code: string | null;
+  invites: WorkerInvite[];
+  error: string | null;
+}> {
+  const { data, error } = await call("create_invite", { note });
+  return {
+    code: (data?.code as string) ?? null,
+    invites: (data?.invites as WorkerInvite[]) ?? [],
+    error,
+  };
+}
+
+export async function listInvites(): Promise<WorkerInvite[]> {
+  const { data } = await call("list_invites");
+  return (data?.invites as WorkerInvite[]) ?? [];
+}
+
+export async function revokeInvite(
+  code: string
+): Promise<{ invites: WorkerInvite[]; error: string | null }> {
+  const { data, error } = await call("revoke_invite", { code });
+  return { invites: (data?.invites as WorkerInvite[]) ?? [], error };
+}
+
+// 工讀生（免登入）：用邀請碼自己設定帳號密碼
+export async function registerWithInvite(p: {
+  code: string;
+  name: string;
+  handle: string;
+  password: string;
+}): Promise<{ handle: string | null; error: string | null }> {
+  const { data, error } = await call("register_with_invite", p);
+  return { handle: (data?.handle as string) ?? null, error };
 }
 
 // 時間顯示：HH:MM

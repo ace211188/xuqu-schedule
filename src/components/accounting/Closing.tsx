@@ -4,81 +4,64 @@ import { useEffect, useMemo, useState } from "react";
 import type { Teacher } from "@/lib/useAuth";
 import { fmtMoney, todayISO } from "@/lib/accounting";
 import {
-  fetchClosingHistory,
+  EDIT_WINDOW_HOURS,
+  closingEditState,
+  fetchClosingList,
+  fetchPettySummary,
   fetchRooms,
   fetchRoster,
-  fetchTodayClosing,
   saveClosing,
   weekDuty,
   type ClosingRecord,
   type ClosingRoom,
+  type PettySummary,
   type RosterEntry,
 } from "@/lib/closing";
-import type { AccountingData } from "./useAccountingData";
-import { Card, Empty, Field, GhostBtn, Money, PrimaryBtn, inputCls } from "./ui";
+import { fmtTime } from "@/lib/attendance";
+import { Card, Empty, Field, Money, PrimaryBtn, inputCls } from "./ui";
 
-export default function Closing({
-  teacher,
-  data,
-}: {
-  teacher: Teacher;
-  data: AccountingData;
-}) {
-  const { accounts, balances, entries, teacherNames } = data;
-
+// 打烊：記帳成員與工讀生共用。資料只從打烊專用的表與 RPC 讀，不需要記帳權限。
+export default function Closing({ teacher }: { teacher: Teacher }) {
   const [rooms, setRooms] = useState<ClosingRoom[]>([]);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
-  const [today, setToday] = useState<ClosingRecord | null>(null);
+  const [list, setList] = useState<ClosingRecord[]>([]);
+  const [petty, setPetty] = useState<PettySummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [pettyActual, setPettyActual] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
-  const [history, setHistory] = useState<ClosingRecord[]>([]);
   const [showHistory, setShowHistory] = useState(false);
 
-  // 帳上零用金餘額（打烊要盤點比對的目標）
-  const pettyAccount = useMemo(
-    () => accounts.find((a) => a.type === "petty" && a.active) ?? null,
-    [accounts]
+  // 每分鐘更新一次「現在」，讓 8 小時鎖定在畫面開著時也會準時生效
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const today = useMemo(
+    () => list.find((r) => r.close_date === todayISO()) ?? null,
+    [list]
   );
-  const pettyExpected = useMemo(() => {
-    if (!pettyAccount) return null;
-    return (
-      balances.find((b) => b.id === pettyAccount.id)?.balance ??
-      pettyAccount.opening_balance
-    );
-  }, [balances, pettyAccount]);
-
-  // 今日找錢（收款當天從零用金找出去的零錢總額）
-  // 用「流水帳的找零分錄(collection_change)」計，而非 collections 清單：
-  // collections 受 RLS 限制（非管理者只看得到自己建的），輪流打烊時別人的找零會漏；
-  // acc_entries 只要 can_accounting 就全讀得到，任何打烊者都算得對。
-  const todayChange = useMemo(() => {
-    const d = todayISO();
-    return entries
-      .filter(
-        (e) =>
-          e.source_type === "collection_change" &&
-          e.occurred_on === d &&
-          (!pettyAccount || e.account_id === pettyAccount.id)
-      )
-      .reduce((s, e) => s + Math.abs(e.signed_amount), 0);
-  }, [entries, pettyAccount]);
-
-  const duty = useMemo(() => weekDuty(roster), [roster]);
+  const edit = closingEditState(today, teacher.id, now);
+  const readOnly = !edit.canEdit;
 
   async function load() {
-    const [r, ro, t] = await Promise.all([
+    const [r, ro, l, p] = await Promise.all([
       fetchRooms(),
       fetchRoster(),
-      fetchTodayClosing(),
+      fetchClosingList(),
+      fetchPettySummary(),
     ]);
     setRooms(r);
     setRoster(ro);
-    setToday(t);
+    setList(l);
+    setPetty(p);
+    const t = l.find((x) => x.close_date === todayISO());
     if (t) {
       setChecked(new Set(t.rooms_checked));
       setPettyActual(t.petty_actual != null ? String(t.petty_actual) : "");
@@ -91,7 +74,19 @@ export default function Closing({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const duty = useMemo(() => weekDuty(roster), [roster]);
+
+  // 可編輯時看即時數字；唯讀時看當時存下的快照（那才是當時盤點的依據）
+  const pettyExpected = readOnly
+    ? today?.petty_expected ?? null
+    : petty?.petty_expected ?? null;
+  const todayChange = readOnly
+    ? today?.today_change ?? 0
+    : petty?.today_change ?? 0;
+  const hasPetty = readOnly ? today?.petty_expected != null : !!petty?.has_petty;
+
   function toggleRoom(name: string) {
+    if (readOnly) return;
     setChecked((prev) => {
       const next = new Set(prev);
       if (next.has(name)) next.delete(name);
@@ -106,18 +101,29 @@ export default function Closing({
   const allRoomsOk = rooms.length > 0 && rooms.every((r) => checked.has(r.name));
 
   async function save() {
+    if (readOnly) return;
+    setErr(null);
     setBusy(true);
     const { error } = await saveClosing({
       closedBy: teacher.id,
       roomsChecked: rooms.filter((r) => checked.has(r.name)).map((r) => r.name),
       roomsTotal: rooms.length,
-      pettyExpected,
+      pettyExpected: petty?.petty_expected ?? null,
       pettyActual: actualNum,
-      todayChange,
+      todayChange: petty?.today_change ?? 0,
       note: note.trim() || null,
     });
     setBusy(false);
-    if (error) return alert(error);
+    if (error) {
+      // 最常見：別人剛好先存了、或已超過 8 小時 → 重新載入後會變成唯讀
+      setErr(
+        /row-level security|violates/i.test(error)
+          ? "今天的打烊已由其他人填寫，或已超過可修改時間，無法再修改。"
+          : error
+      );
+      await load();
+      return;
+    }
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 1500);
     await load();
@@ -132,7 +138,9 @@ export default function Closing({
         <div>
           <p className="text-sm text-black/55">
             打烊前逐項檢查、盤點零用金。負責人：
-            <b className="text-navy">{teacher.name}</b>
+            <b className="text-navy">
+              {today ? today.closer_name ?? "—" : teacher.name}
+            </b>
           </p>
           <p className="text-xs text-black/40">{todayISO()}</p>
         </div>
@@ -142,6 +150,9 @@ export default function Closing({
           </span>
         )}
       </div>
+
+      {/* 編輯權限說明 */}
+      <EditBanner edit={edit} closerName={today?.closer_name ?? null} />
 
       {/* 本週廁所清潔 */}
       <Card className="flex items-center gap-3">
@@ -181,7 +192,8 @@ export default function Closing({
                 <button
                   key={r.id}
                   onClick={() => toggleRoom(r.name)}
-                  className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm transition active:scale-[0.99] ${
+                  disabled={readOnly}
+                  className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm transition enabled:active:scale-[0.99] disabled:cursor-default ${
                     on
                       ? "border-[#8CA07C]/50 bg-[#8CA07C]/10 text-[#3b352f]"
                       : "border-black/15 bg-white text-black/60"
@@ -221,10 +233,11 @@ export default function Closing({
           <input
             type="number"
             inputMode="numeric"
-            className={inputCls}
+            className={`${inputCls} disabled:bg-black/[0.03] disabled:text-black/60`}
             value={pettyActual}
             onChange={(e) => setPettyActual(e.target.value)}
-            placeholder="0"
+            placeholder={readOnly ? "（未填）" : "0"}
+            disabled={readOnly}
           />
         </Field>
         {diff != null && (
@@ -242,9 +255,9 @@ export default function Closing({
               : `短少 ${fmtMoney(Math.abs(diff))}`}
           </div>
         )}
-        {!pettyAccount && (
+        {!hasPetty && (
           <p className="text-xs text-black/40">
-            找不到零用金帳戶，請先到「設定」建立一個「零用金」類型的帳戶。
+            找不到零用金帳戶，請管理員到「設定」建立一個「零用金」類型的帳戶。
           </p>
         )}
       </Card>
@@ -253,41 +266,44 @@ export default function Closing({
       <Card>
         <Field label="備註" hint="（選填）">
           <textarea
-            className={`${inputCls} h-20 resize-none`}
+            className={`${inputCls} h-20 resize-none disabled:bg-black/[0.03] disabled:text-black/60`}
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="今天有什麼要交代的？例：冷氣濾網該清了"
+            placeholder={readOnly ? "（無）" : "今天有什麼要交代的？例：冷氣濾網該清了"}
+            disabled={readOnly}
           />
         </Field>
       </Card>
 
-      <div className="flex items-center justify-end gap-3">
-        {savedFlash && (
-          <span className="text-sm text-[#5f7a4f]">✓ 已儲存打烊紀錄</span>
-        )}
-        <PrimaryBtn onClick={save} disabled={busy}>
-          {busy ? "儲存中…" : today ? "更新打烊紀錄" : "儲存打烊紀錄"}
-        </PrimaryBtn>
-      </div>
+      {err && (
+        <p className="rounded-xl bg-brand/5 px-3 py-2 text-sm text-brand">{err}</p>
+      )}
+
+      {!readOnly && (
+        <div className="flex items-center justify-end gap-3">
+          {savedFlash && (
+            <span className="text-sm text-[#5f7a4f]">✓ 已儲存打烊紀錄</span>
+          )}
+          <PrimaryBtn onClick={save} disabled={busy}>
+            {busy ? "儲存中…" : today ? "更新打烊紀錄" : "儲存打烊紀錄"}
+          </PrimaryBtn>
+        </div>
+      )}
 
       {/* 歷史 */}
       <div>
         <button
-          onClick={async () => {
-            if (!showHistory && history.length === 0)
-              setHistory(await fetchClosingHistory());
-            setShowHistory((s) => !s);
-          }}
+          onClick={() => setShowHistory((s) => !s)}
           className="text-sm text-black/55 hover:text-navy"
         >
           {showHistory ? "▲ 收起歷史紀錄" : "▼ 查看歷史打烊紀錄"}
         </button>
         {showHistory && (
           <div className="mt-2 space-y-2">
-            {history.length === 0 ? (
+            {list.length === 0 ? (
               <Empty>還沒有歷史紀錄</Empty>
             ) : (
-              history.map((h) => {
+              list.map((h) => {
                 const d =
                   h.petty_actual != null && h.petty_expected != null
                     ? h.petty_actual - h.petty_expected
@@ -297,9 +313,7 @@ export default function Closing({
                     <div className="flex items-center justify-between">
                       <span className="font-medium text-navy">{h.close_date}</span>
                       <span className="text-xs text-black/45">
-                        {h.closed_by
-                          ? teacherNames.get(h.closed_by) ?? "—"
-                          : "—"}
+                        {h.closer_name ?? "—"}
                       </span>
                     </div>
                     <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-black/50">
@@ -329,5 +343,31 @@ export default function Closing({
         )}
       </div>
     </div>
+  );
+}
+
+function EditBanner({
+  edit,
+  closerName,
+}: {
+  edit: ReturnType<typeof closingEditState>;
+  closerName: string | null;
+}) {
+  if (edit.canEdit) {
+    return (
+      <p className="rounded-xl bg-navy/5 px-3 py-2 text-xs text-navy/80">
+        {edit.deadline
+          ? `✏️ 你是今天的編輯者，可以修改到 ${fmtTime(edit.deadline.toISOString())}（存檔後 ${EDIT_WINDOW_HOURS} 小時內）。`
+          : `今天還沒有人填寫。存檔後你就是今天的編輯者，${EDIT_WINDOW_HOURS} 小時內可以修改，其他人只能檢視。`}
+      </p>
+    );
+  }
+  return (
+    <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700">
+      🔒{" "}
+      {edit.reason === "others"
+        ? `今天由 ${closerName ?? "其他人"} 填寫，你只能檢視。`
+        : `已超過 ${EDIT_WINDOW_HOURS} 小時，今天的紀錄已鎖定，僅供檢視。`}
+    </p>
   );
 }

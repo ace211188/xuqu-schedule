@@ -1,7 +1,6 @@
 "use client";
 
 import type { Teacher } from "@/lib/useAuth";
-import { useAccountingData } from "./accounting/useAccountingData";
 import Closing from "./accounting/Closing";
 
 export default function ClosingApp({
@@ -19,8 +18,6 @@ export default function ClosingApp({
   onOpenStudents?: () => void;
   onOpenAccounting?: () => void;
 }) {
-  const data = useAccountingData();
-
   return (
     <main className="relative mx-auto min-h-screen w-full max-w-3xl px-4 py-6">
       <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -73,11 +70,7 @@ export default function ClosingApp({
         </div>
       </header>
 
-      {data.loading ? (
-        <div className="py-16 text-center text-sm text-black/45">載入中…</div>
-      ) : (
-        <Closing teacher={teacher} data={data} />
-      )}
+      <Closing teacher={teacher} />
     </main>
   );
 }

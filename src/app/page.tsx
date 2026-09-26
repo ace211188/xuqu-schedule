@@ -63,8 +63,8 @@ export default function Page() {
 
   const toAccounting = hasAccounting ? () => setView("accounting") : undefined;
   const toStudents = hasStudents ? () => setView("students") : undefined;
-  // 打烊：先開放給有記帳權限者（宇群/美君/奕寬）
-  const hasClosing = hasAccounting;
+  // 打烊：記帳成員（宇群/美君/奕寬）＋工讀生（純工讀生在 WorkerApp 裡有打烊分頁）
+  const hasClosing = hasAccounting || teacher.is_worker;
   const toClosing = hasClosing ? () => setView("closing") : undefined;
 
   // 打烊紀錄（獨立模組，與排課/學生/記帳同一排）

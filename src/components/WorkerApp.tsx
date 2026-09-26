@@ -8,6 +8,9 @@ import {
   fmtTime,
   type AttendanceStatus,
 } from "@/lib/attendance";
+import Closing from "./accounting/Closing";
+
+type WorkerTab = "checkin" | "closing";
 
 export default function WorkerApp({
   teacher,
@@ -16,6 +19,55 @@ export default function WorkerApp({
   teacher: Teacher;
   onSignOut: () => void;
 }) {
+  const [tab, setTab] = useState<WorkerTab>("checkin");
+
+  return (
+    <main
+      className={`mx-auto flex min-h-screen w-full flex-col px-5 py-8 ${
+        tab === "closing" ? "max-w-3xl" : "max-w-md"
+      }`}
+    >
+      <header className="mb-5 flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-navy">
+            {tab === "closing" ? "打烊紀錄" : "工讀生簽到"}
+          </h1>
+          <p className="text-sm text-black/55">{teacher.name}</p>
+        </div>
+        <button
+          onClick={onSignOut}
+          className="rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/60 transition hover:border-black/40"
+        >
+          登出
+        </button>
+      </header>
+
+      {/* 簽到 / 打烊 切換 */}
+      <div className="mb-6 flex gap-1 rounded-2xl border border-black/10 bg-white/70 p-1">
+        {(
+          [
+            ["checkin", "🖐️ 簽到"],
+            ["closing", "🌙 打烊"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`flex-1 rounded-xl px-3.5 py-2 text-sm font-medium transition active:scale-95 ${
+              tab === key ? "bg-navy text-white shadow-sm" : "text-black/55 hover:text-navy"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "closing" ? <Closing teacher={teacher} /> : <CheckInPanel />}
+    </main>
+  );
+}
+
+function CheckInPanel() {
   const [status, setStatus] = useState<AttendanceStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -50,20 +102,7 @@ export default function WorkerApp({
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-md flex-col px-5 py-8">
-      <header className="mb-8 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-navy">工讀生簽到</h1>
-          <p className="text-sm text-black/55">{teacher.name}</p>
-        </div>
-        <button
-          onClick={onSignOut}
-          className="rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/60 transition hover:border-black/40"
-        >
-          登出
-        </button>
-      </header>
-
+    <>
       {loading ? (
         <div className="py-20 text-center text-sm text-black/45">載入中…</div>
       ) : (
@@ -79,8 +118,8 @@ export default function WorkerApp({
             <span className="text-lg">{onSite ? "✅" : "📶"}</span>
             <span className="flex-1">
               {onSite
-                ? "已連上店裡的網路，可以簽到"
-                : "尚未連上店裡的網路，請先連序曲 WiFi"}
+                ? "已連上教室網路，可以簽到"
+                : "請先連上教室網路後再簽到"}
             </span>
             <button
               onClick={refresh}
@@ -116,7 +155,7 @@ export default function WorkerApp({
 
           {!onSite && !checkedIn && (
             <p className="text-center text-xs text-black/45">
-              連上店裡 WiFi 後按「重新檢查」，按鈕就會亮起來。
+              連上教室網路後按「重新檢查」，簽到按鈕就會亮起來。
             </p>
           )}
 
@@ -127,6 +166,6 @@ export default function WorkerApp({
           )}
         </div>
       )}
-    </main>
+    </>
   );
 }

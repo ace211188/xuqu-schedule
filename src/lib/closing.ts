@@ -21,6 +21,7 @@ export type ClosingRecord = {
   id: string;
   close_date: string;
   closed_by: string | null;
+  closer_name: string | null; // 填寫者名字（由 closing_list RPC 帶出）
   rooms_checked: string[];
   rooms_total: number;
   petty_expected: number | null;
@@ -28,9 +29,40 @@ export type ClosingRecord = {
   today_change: number;
   note: string | null;
   created_at: string;
+  updated_at: string;
+};
+
+// 零用金盤點數字（工讀生也拿得到，但只有這兩個數字）
+export type PettySummary = {
+  has_petty: boolean;
+  petty_expected: number | null;
+  today_change: number;
 };
 
 type Res = { error: string | null };
+
+// ── 編輯權限：當天第一個存檔的人＝編輯者；自第一次存檔起 8 小時內可改（資料庫同樣把關）──
+export const EDIT_WINDOW_HOURS = 8;
+
+export function editDeadline(r: ClosingRecord): Date {
+  return new Date(new Date(r.created_at).getTime() + EDIT_WINDOW_HOURS * 3600_000);
+}
+
+export type EditState =
+  | { canEdit: true; deadline: Date | null } // deadline=null：今天還沒人存檔
+  | { canEdit: false; reason: "others" | "expired" };
+
+export function closingEditState(
+  r: ClosingRecord | null,
+  myId: string,
+  now = new Date()
+): EditState {
+  if (!r) return { canEdit: true, deadline: null };
+  if (r.closed_by !== myId) return { canEdit: false, reason: "others" };
+  const deadline = editDeadline(r);
+  if (now >= deadline) return { canEdit: false, reason: "expired" };
+  return { canEdit: true, deadline };
+}
 
 // ── ISO 週次（用於廁所清潔自動輪值）──
 export function isoWeek(base = new Date()): number {
@@ -77,22 +109,32 @@ export async function fetchRoster(): Promise<RosterEntry[]> {
   return (data ?? []) as RosterEntry[];
 }
 
-export async function fetchTodayClosing(): Promise<ClosingRecord | null> {
-  const { data } = await supabase
-    .from("closing_records")
-    .select("*")
-    .eq("close_date", todayISO())
-    .maybeSingle();
-  return (data as ClosingRecord) ?? null;
+// 打烊紀錄（新→舊，含填寫者名字）。經 RPC：工讀生讀不到 teachers 名單，由資料庫帶出名字
+export async function fetchClosingList(limit = 60): Promise<ClosingRecord[]> {
+  const { data } = await supabase.rpc("closing_list", { p_limit: limit });
+  return ((data ?? []) as ClosingRecord[]).map((r) => ({
+    ...r,
+    rooms_checked: r.rooms_checked ?? [],
+    petty_expected: r.petty_expected == null ? null : Number(r.petty_expected),
+    petty_actual: r.petty_actual == null ? null : Number(r.petty_actual),
+    today_change: Number(r.today_change ?? 0),
+  }));
 }
 
-export async function fetchClosingHistory(limit = 60): Promise<ClosingRecord[]> {
-  const { data } = await supabase
-    .from("closing_records")
-    .select("*")
-    .order("close_date", { ascending: false })
-    .limit(limit);
-  return (data ?? []) as ClosingRecord[];
+// 零用金「帳上應有」與「今日找錢」（p_date 用本地日期）
+export async function fetchPettySummary(
+  date = todayISO()
+): Promise<PettySummary | null> {
+  const { data, error } = await supabase.rpc("closing_petty_summary", {
+    p_date: date,
+  });
+  if (error || !data) return null;
+  const d = data as PettySummary;
+  return {
+    has_petty: !!d.has_petty,
+    petty_expected: d.petty_expected == null ? null : Number(d.petty_expected),
+    today_change: Number(d.today_change ?? 0),
+  };
 }
 
 // ── 寫入：今天的打烊紀錄（一天一筆，close_date 為衝突鍵）──
