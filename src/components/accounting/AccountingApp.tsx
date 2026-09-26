@@ -11,6 +11,7 @@ import Purchases from "./Purchases";
 import Ledger from "./Ledger";
 import Monthly from "./Monthly";
 import Payroll from "./Payroll";
+import Attendance from "./Attendance";
 import Settings from "./Settings";
 
 export type AccountingTab =
@@ -20,6 +21,7 @@ export type AccountingTab =
   | "purchase"
   | "ledger"
   | "monthly"
+  | "attendance"
   | "payroll"
   | "settings";
 
@@ -30,6 +32,7 @@ const TABS: { key: AccountingTab; label: string; adminOnly?: boolean }[] = [
   { key: "reimb", label: "代墊" },
   { key: "collect", label: "收款" },
   { key: "purchase", label: "採購" },
+  { key: "attendance", label: "出勤" },
   { key: "payroll", label: "發薪", adminOnly: true },
   { key: "settings", label: "設定", adminOnly: true },
 ];
@@ -174,6 +177,7 @@ export default function AccountingApp({
           {tab === "reimb" && <Reimbursements teacher={teacher} data={data} />}
           {tab === "collect" && <Collections teacher={teacher} data={data} />}
           {tab === "purchase" && <Purchases teacher={teacher} data={data} />}
+          {tab === "attendance" && <Attendance />}
           {tab === "payroll" && teacher.is_admin && (
             <Payroll teacher={teacher} />
           )}
