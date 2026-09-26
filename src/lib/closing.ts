@@ -130,11 +130,18 @@ export function dutyLabel(s: ScheduleDay): string {
 }
 
 // 能不能建立這天的打烊紀錄（與資料庫 closing_can_fill 相同規則，資料庫也會把關）
+// 有指派代班時只有被指派的人；沒指派才是輪值的人；都沒設定則誰都可以
 export function canFillDay(s: ScheduleDay | null, myId: string): boolean {
   if (!s) return true;
   if (s.holiday) return false;
-  if (!s.rota_id && !s.worker_id) return true;
-  return myId === s.rota_id || myId === s.worker_id;
+  if (s.worker_id) return myId === s.worker_id;
+  if (!s.rota_id) return true;
+  return myId === s.rota_id;
+}
+
+// 這天實際負責打烊的人
+export function dutyPersonId(s: ScheduleDay): string | null {
+  return s.holiday ? null : s.worker_id ?? s.rota_id;
 }
 
 export async function fetchSchedule(

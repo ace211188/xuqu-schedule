@@ -96,16 +96,17 @@ begin
 end;
 $$;
 
--- 目前登入者能不能建立這天的打烊紀錄
+-- 目前登入者能不能填這天的打烊紀錄：
+--   公休 → 不行；有指派代班 → 只有被指派的人（原本輪值的人也不行）；
+--   沒指派 → 輪值的人；這天沒設定輪值 → 有打烊權限的人都可以
 create or replace function public.closing_can_fill(p_day date)
 returns boolean language sql security definer stable set search_path = public as $$
   select coalesce(
     case
       when coalesce(r.closed, false) or coalesce(cd.holiday, false) then false
-      -- 這天沒設定負責人：有打烊權限的人都能填
-      when r.teacher_id is null and cd.assigned_worker_id is null
-        then public.can_accounting() or public.is_worker()
-      else auth.uid() = r.teacher_id or auth.uid() = cd.assigned_worker_id
+      when cd.assigned_worker_id is not null then auth.uid() = cd.assigned_worker_id
+      when r.teacher_id is null then public.can_accounting() or public.is_worker()
+      else auth.uid() = r.teacher_id
     end,
     false)
   from (select 1) as one
@@ -113,7 +114,7 @@ returns boolean language sql security definer stable set search_path = public as
   left join public.closing_days cd on cd.day = p_day;
 $$;
 
--- 打烊紀錄：只有當天負責人能建立（修改仍是「編輯者本人＋8 小時內」）
+-- 打烊紀錄：只有當天負責人能建立
 drop policy if exists "closing insert" on public.closing_records;
 create policy "closing insert" on public.closing_records
   for insert with check (
@@ -121,6 +122,17 @@ create policy "closing insert" on public.closing_records
     and closed_by = auth.uid()
     and public.closing_can_fill(close_date)
   );
+
+-- 修改：編輯者本人＋8 小時內＋仍是當天負責人（存完後被改指派給別人就不能再改）
+drop policy if exists "closing update" on public.closing_records;
+create policy "closing update" on public.closing_records
+  for update
+  using (
+    closed_by = auth.uid()
+    and now() < created_at + interval '8 hours'
+    and public.closing_can_fill(close_date)
+  )
+  with check (closed_by = auth.uid());
 
 -- 宇群：標記／取消公休
 create or replace function public.closing_set_holiday(p_day date, p_holiday boolean)

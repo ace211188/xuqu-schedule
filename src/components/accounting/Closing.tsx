@@ -11,6 +11,7 @@ import {
   canFillDay,
   closingEditState,
   dutyLabel,
+  dutyPersonId,
   fetchClosingList,
   fetchPettySummary,
   fetchRooms,
@@ -69,10 +70,8 @@ export default function Closing({ teacher }: { teacher: Teacher }) {
     () => schedule.find((s) => s.day === todayISO()) ?? null,
     [schedule]
   );
-  // 今天還沒人填時：公休或不是負責人 → 不能建立（資料庫也會擋）
-  const dutyBlock: "holiday" | "notDuty" | null = today
-    ? null
-    : todayDuty?.holiday
+  // 公休或不是今天的負責人 → 不能填也不能改（有指派代班時，原本輪值的人也不能）；資料庫同樣把關
+  const dutyBlock: "holiday" | "notDuty" | null = todayDuty?.holiday
     ? "holiday"
     : !canFillDay(todayDuty, teacher.id)
     ? "notDuty"
@@ -486,9 +485,7 @@ function ScheduleList({
   const [open, setOpen] = useState(false);
   const [busyDay, setBusyDay] = useState<string | null>(null);
   const admin = teacher.is_admin;
-  const mine = schedule.filter(
-    (s) => !s.holiday && (s.rota_id === teacher.id || s.worker_id === teacher.id)
-  ).length;
+  const mine = schedule.filter((s) => dutyPersonId(s) === teacher.id).length;
 
   async function run(day: string, fn: () => Promise<{ error: string | null }>) {
     setBusyDay(day);
@@ -517,7 +514,7 @@ function ScheduleList({
           {schedule.map((s) => {
             const [, m, d] = s.day.split("-").map(Number);
             const canAssign = !s.holiday && (admin || s.rota_id === teacher.id);
-            const isMe = s.rota_id === teacher.id || s.worker_id === teacher.id;
+            const isMe = dutyPersonId(s) === teacher.id;
             return (
               <div
                 key={s.day}
