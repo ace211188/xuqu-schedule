@@ -9,8 +9,7 @@
 //   checkout       －簽退（需在允許網路內；補上最近一筆未簽退的班，過午夜也可）
 //   allow_network  －管理員：把目前這台裝置的網路加入允許清單
 //   remove_network －管理員：移除一筆允許網路
-//   create_invite / list_invites / revoke_invite －管理員：工讀生邀請碼
-//   register_with_invite －（免登入）工讀生用邀請碼自己設定帳號密碼
+//   list_workers / create_worker / create_teacher / delete_worker －管理員：帳號管理
 //
 // 密鑰：SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 由平台自動注入。
 // 部署：supabase functions deploy worker-checkin
@@ -69,19 +68,7 @@ function normalizeIp(raw: string | null): string | null {
   return prefix.join(":") + "::/64";
 }
 
-// 邀請碼：8 碼，去掉易混淆的 0/O/1/I/L
-const INVITE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-const INVITE_DAYS = 7;
-function newInviteCode(): string {
-  const bytes = new Uint8Array(8);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => INVITE_ALPHABET[b % INVITE_ALPHABET.length]).join("");
-}
-function normalizeCode(raw: string | undefined): string {
-  return (raw ?? "").toUpperCase().replace(/[\s-]/g, "");
-}
-
-// 工讀生帳號欄位檢查（管理員建立與邀請碼註冊共用）
+// 帳號欄位檢查（管理員建立老師／工讀生共用）
 function validateWorkerInput(
   handleRaw: string | undefined,
   nameRaw: string | undefined,
@@ -129,8 +116,6 @@ Deno.serve(async (req) => {
     name?: string;
     password?: string;
     workerId?: string;
-    code?: string;
-    note?: string;
   } = {};
   try {
     body = await req.json();
@@ -138,53 +123,6 @@ Deno.serve(async (req) => {
     /* 空 body 當作 status */
   }
   const mode = body.mode ?? "status";
-
-  // ── 免登入：工讀生用邀請碼自己設定帳號密碼 ──
-  // （工讀生此時還沒有帳號，所以放在登入檢查之前；安全性靠一次性、有期限的邀請碼）
-  if (mode === "register_with_invite") {
-    const code = normalizeCode(body.code);
-    if (code.length !== 8) return json({ error: "邀請碼是 8 碼，請再確認" }, 400);
-    const v = validateWorkerInput(body.handle, body.name, body.password);
-    if ("error" in v) return json({ error: v.error }, 400);
-
-    // 先「佔用」邀請碼（同一個碼同時被兩人用時，只有一人會成功）
-    const nowIso = new Date().toISOString();
-    const { data: claimed } = await admin
-      .from("worker_invites")
-      .update({ used_at: nowIso })
-      .eq("code", code)
-      .is("used_at", null)
-      .gt("expires_at", nowIso)
-      .select("code")
-      .maybeSingle();
-    if (!claimed) return json({ error: "邀請碼無效、已使用或已過期，請向管理員索取新的" }, 400);
-    const release = () =>
-      admin.from("worker_invites").update({ used_at: null }).eq("code", code);
-
-    const { data: created, error: createErr } = await admin.auth.admin.createUser({
-      email: `${v.handle}@xuqu.tw`,
-      password: v.password,
-      email_confirm: true,
-    });
-    if (createErr || !created?.user) {
-      await release();
-      const taken = /already|registered|exists/i.test(createErr?.message ?? "");
-      return json(
-        { error: taken ? "這個帳號已經有人用了，請換一個" : createErr?.message ?? "建立帳號失敗" },
-        400
-      );
-    }
-    const { error: insErr } = await admin
-      .from("teachers")
-      .insert({ id: created.user.id, name: v.name, is_worker: true });
-    if (insErr) {
-      await admin.auth.admin.deleteUser(created.user.id);
-      await release();
-      return json({ error: `建立失敗：${insErr.message}` }, 400);
-    }
-    await admin.from("worker_invites").update({ used_by: created.user.id }).eq("code", code);
-    return json({ ok: true, handle: v.handle, name: v.name });
-  }
 
   // 驗證呼叫者
   const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
@@ -419,46 +357,6 @@ Deno.serve(async (req) => {
     const { error: delErr } = await admin.auth.admin.deleteUser(wid);
     if (delErr) return json({ error: `刪除失敗：${delErr.message}` }, 400);
     return json({ ok: true });
-  }
-
-  // ── 管理員：工讀生邀請碼 ──
-  async function listInvites() {
-    const { data } = await admin
-      .from("worker_invites")
-      .select("code,note,created_at,expires_at,used_at,used_by")
-      .order("created_at", { ascending: false })
-      .limit(30);
-    return data ?? [];
-  }
-
-  if (mode === "create_invite") {
-    if (!me.is_admin) return json({ error: "只有管理員能產生邀請碼" }, 403);
-    const expires = new Date(Date.now() + INVITE_DAYS * 86400000).toISOString();
-    // 碰撞機率極低，保險起見最多重試幾次
-    for (let i = 0; i < 5; i++) {
-      const code = newInviteCode();
-      const { error } = await admin.from("worker_invites").insert({
-        code,
-        note: (body.note ?? "").trim() || null,
-        created_by: uid,
-        expires_at: expires,
-      });
-      if (!error) return json({ ok: true, code, expiresAt: expires, invites: await listInvites() });
-    }
-    return json({ error: "產生邀請碼失敗，請再試一次" }, 500);
-  }
-
-  if (mode === "list_invites") {
-    if (!me.is_admin) return json({ error: "只有管理員能查看邀請碼" }, 403);
-    return json({ ok: true, invites: await listInvites() });
-  }
-
-  if (mode === "revoke_invite") {
-    if (!me.is_admin) return json({ error: "只有管理員能作廢邀請碼" }, 403);
-    const code = normalizeCode(body.code);
-    // 只作廢還沒被用掉的
-    await admin.from("worker_invites").delete().eq("code", code).is("used_at", null);
-    return json({ ok: true, invites: await listInvites() });
   }
 
   return json({ error: "未知的 mode" }, 400);

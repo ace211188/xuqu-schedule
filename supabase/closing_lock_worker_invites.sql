@@ -154,3 +154,9 @@ alter table public.worker_invites enable row level security;
 drop policy if exists "worker_invites admin read" on public.worker_invites;
 create policy "worker_invites admin read" on public.worker_invites
   for select using (public.is_admin());
+
+-- ------------------------------------------------------------
+-- 2026-09-29：工讀生邀請碼功能已移除（改由管理員在設定頁一鍵建立帳號）
+-- 上面 (5) 的 worker_invites 表已刪除（當時沒有任何資料）
+-- ------------------------------------------------------------
+drop table if exists public.worker_invites;
