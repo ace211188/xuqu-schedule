@@ -1,8 +1,10 @@
 // 個性化問候：分時段、分性別、個人專屬，每次登入隨機不同
 
+// 只對明確列出的人用性別專屬語句；沒列到的（新老師）一律用中性語句，不從名字猜性別
 const FEMALE = new Set(["美君", "恩妤", "蓁芸"]);
-export function genderOf(name: string): "f" | "m" {
-  return FEMALE.has(name) ? "f" : "m";
+const MALE = new Set(["奕寬", "宇群", "孟凱"]);
+export function genderOf(name: string): "f" | "m" | "n" {
+  return FEMALE.has(name) ? "f" : MALE.has(name) ? "m" : "n";
 }
 
 function pick<T>(arr: T[]): T {
@@ -99,7 +101,7 @@ export function greetingFor(name: string, d = new Date()) {
   const gender = genderOf(name);
   const pool = [
     ...SUB_GENERAL,
-    ...(gender === "f" ? SUB_F : SUB_M),
+    ...(gender === "f" ? SUB_F : gender === "m" ? SUB_M : []),
     ...(PERSONAL[name] ?? []),
   ];
   return { hi: timeHi(name, d), sub: pick(pool), line: pick(WARM_LINES) };
