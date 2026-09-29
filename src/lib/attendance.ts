@@ -34,6 +34,7 @@ type Mode =
   | "remove_network"
   | "list_workers"
   | "create_worker"
+  | "create_teacher"
   | "delete_worker"
   | "create_invite"
   | "list_invites"
@@ -137,6 +138,16 @@ export async function createWorker(p: {
   password: string;
 }): Promise<{ email: string | null; error: string | null }> {
   const { data, error } = await call("create_worker", p);
+  return { email: (data?.email as string) ?? null, error };
+}
+
+// 管理員：建立老師帳號（一般老師權限；帳密同步寫入「老師帳號密碼一覽」）
+export async function createTeacher(p: {
+  handle: string;
+  name: string;
+  password: string;
+}): Promise<{ email: string | null; error: string | null }> {
+  const { data, error } = await call("create_teacher", p);
   return { email: (data?.email as string) ?? null, error };
 }
 

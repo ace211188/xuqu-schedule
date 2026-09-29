@@ -15,8 +15,16 @@ import {
 } from "@/lib/accounting";
 import type { AccountingData } from "./useAccountingData";
 import {
+  fetchLoginAccounts,
+  loginMessage,
+  newPassword,
+  suggestHandle,
+  type LoginAccount,
+} from "@/lib/accounts";
+import {
   allowCurrentNetwork,
   createInvite,
+  createTeacher,
   createWorker,
   deleteWorker,
   fetchAttendanceStatus,
@@ -213,6 +221,9 @@ export default function Settings({ data }: { data: AccountingData }) {
         </p>
       </section>
 
+      {/* 老師帳號（一鍵產生帳密） */}
+      <TeacherAccounts onCreated={loadTeachers} />
+
       {/* 工讀生帳號 */}
       <WorkerAccounts />
 
@@ -247,9 +258,59 @@ export default function Settings({ data }: { data: AccountingData }) {
   );
 }
 
+// ── 老師帳號：一鍵產生帳密（一般老師權限，登入後可填排課）──
+function TeacherAccounts({ onCreated }: { onCreated: () => void }) {
+  const [accounts, setAccounts] = useState<LoginAccount[]>([]);
+  const [adding, setAdding] = useState(false);
+
+  const load = () => fetchLoginAccounts().then(setAccounts);
+  useEffect(() => {
+    fetchLoginAccounts().then(setAccounts);
+  }, []);
+
+  // 教室端裝置帳號「管理員」與工讀生不列在老師清單
+  const teachers = accounts.filter((a) => !a.is_worker && a.name !== "管理員");
+
+  return (
+    <section>
+      <div className="mb-2 flex items-center justify-between">
+        <SectionTitle>老師帳號</SectionTitle>
+        <GhostBtn onClick={() => setAdding(true)}>＋ 新增老師</GhostBtn>
+      </div>
+      <Card className="p-0">
+        <div className="divide-y divide-black/5">
+          {teachers.map((t) => (
+            <div key={t.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
+              <span className="font-medium text-navy">{t.name}</span>
+              <span className="font-mono text-xs text-black/50">{t.username ?? "—"}</span>
+            </div>
+          ))}
+        </div>
+      </Card>
+      <p className="mt-1 text-xs text-black/40">
+        新老師登入後可以填「我的排課」；要開記帳權限請到上面「記帳成員權限」。密碼可在排課後台「🔑 老師帳號密碼一覽」查。
+      </p>
+
+      {adding && (
+        <NewLoginModal
+          kind="teacher"
+          taken={new Set(accounts.map((a) => a.username).filter((u): u is string => !!u))}
+          onClose={() => setAdding(false)}
+          onDone={async () => {
+            setAdding(false);
+            await load();
+            onCreated();
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
 // ── 工讀生帳號 ──────────────────────────────────────
 function WorkerAccounts() {
   const [workers, setWorkers] = useState<WorkerRow[]>([]);
+  const [taken, setTaken] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
 
   const load = () => listWorkers().then(setWorkers);
@@ -257,11 +318,17 @@ function WorkerAccounts() {
     load();
   }, []);
 
+  async function openAdd() {
+    const accs = await fetchLoginAccounts();
+    setTaken(new Set(accs.map((a) => a.username).filter((u): u is string => !!u)));
+    setAdding(true);
+  }
+
   return (
     <section>
       <div className="mb-2 flex items-center justify-between">
         <SectionTitle>工讀生帳號</SectionTitle>
-        <GhostBtn onClick={() => setAdding(true)}>＋ 新增工讀生</GhostBtn>
+        <GhostBtn onClick={openAdd}>＋ 新增工讀生</GhostBtn>
       </div>
       <Card className="p-0">
         {workers.length === 0 ? (
@@ -304,9 +371,11 @@ function WorkerAccounts() {
       <WorkerInvites workers={workers} onUsed={load} />
 
       {adding && (
-        <WorkerModal
+        <NewLoginModal
+          kind="worker"
+          taken={taken}
           onClose={() => setAdding(false)}
-          onSaved={async () => {
+          onDone={async () => {
             setAdding(false);
             await load();
           }}
@@ -439,91 +508,130 @@ function WorkerInvites({
   );
 }
 
-function WorkerModal({
+// ── 一鍵建立帳號（老師／工讀生）：打名字 → 自動帳號（拼音）＋自動密碼 → 建立 → 複製給對方 ──
+function NewLoginModal({
+  kind,
+  taken,
   onClose,
-  onSaved,
+  onDone,
 }: {
+  kind: "teacher" | "worker";
+  taken: Set<string>;
   onClose: () => void;
-  onSaved: () => void;
+  onDone: () => void;
 }) {
+  const label = kind === "teacher" ? "老師" : "工讀生";
   const [name, setName] = useState("");
   const [handle, setHandle] = useState("");
   const [password, setPassword] = useState("");
+  const [handleEdited, setHandleEdited] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [done, setDone] = useState<{ email: string } | null>(null);
+  const [done, setDone] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  async function save() {
+  // 打名字時自動帶出拼音帳號與密碼（手動改過帳號後就不再覆蓋）
+  useEffect(() => {
+    if (handleEdited) return;
+    let active = true;
+    suggestHandle(name, taken).then((h) => {
+      if (!active) return;
+      setHandle(h);
+      setPassword(h ? newPassword(h) : "");
+    });
+    return () => {
+      active = false;
+    };
+  }, [name, handleEdited, taken]);
+
+  const message = loginMessage({ kind, name: name.trim(), handle, password });
+
+  async function create() {
     setErr(null);
-    if (!name.trim()) return setErr("請填顯示名字");
-    if (!/^[a-z0-9._-]+$/i.test(handle.trim()))
-      return setErr("登入帳號只能用英文/數字（例：amei）");
+    const h = handle.trim().toLowerCase();
+    if (!name.trim()) return setErr("請填名字");
+    if (!/^[a-z0-9._-]+$/.test(h)) return setErr("帳號只能用英文/數字（例：yalun）");
+    if (taken.has(h)) return setErr(`帳號「${h}」已經有人用了，請換一個`);
     if (password.length < 6) return setErr("密碼至少 6 碼");
     setBusy(true);
-    const { email, error } = await createWorker({
-      handle: handle.trim(),
-      name: name.trim(),
-      password,
-    });
+    const fn = kind === "teacher" ? createTeacher : createWorker;
+    const { error } = await fn({ handle: h, name: name.trim(), password });
     setBusy(false);
     if (error) return setErr(error);
-    setDone({ email: email ?? `${handle.trim().toLowerCase()}@xuqu.tw` });
+    setDone(true);
+  }
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(message);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      window.prompt("複製下面這段傳給對方：", message);
+    }
   }
 
   return (
-    <Modal title="新增工讀生帳號" onClose={onClose}>
+    <Modal title={`新增${label}帳號`} onClose={done ? onDone : onClose}>
       {done ? (
         <div className="space-y-3">
           <p className="rounded-xl bg-[#8CA07C]/10 px-3 py-3 text-sm text-[#5f7a4f]">
-            ✓ 帳號已建立！請把下列資訊給工讀生：
+            ✓ {name.trim()} 的帳號已建立！把下面的登入資訊傳給對方：
           </p>
-          <div className="rounded-xl border border-black/10 px-3 py-2 text-sm">
-            <div>
-              登入帳號：<b className="font-mono">{handle.trim().toLowerCase()}</b>
-            </div>
-            <div className="mt-1">
-              密碼：<b className="font-mono">{password}</b>
-            </div>
-          </div>
+          <pre className="whitespace-pre-wrap rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2 text-sm text-black/75">
+            {message}
+          </pre>
           <p className="text-xs text-black/45">
-            工讀生在登入頁「帳號」欄輸入 <b>{handle.trim().toLowerCase()}</b>、密碼即可。
+            之後忘記密碼，可到排課後台「🔑 老師帳號密碼一覽」查。
           </p>
-          <div className="flex justify-end pt-1">
-            <PrimaryBtn onClick={onSaved}>完成</PrimaryBtn>
+          <div className="flex justify-end gap-2 pt-1">
+            <GhostBtn onClick={copy}>{copied ? "✓ 已複製" : "複製訊息"}</GhostBtn>
+            <PrimaryBtn onClick={onDone}>完成</PrimaryBtn>
           </div>
         </div>
       ) : (
         <div className="space-y-3">
-          <Field label="顯示名字" hint="（中文，出勤名冊用）">
+          <Field label={`${label}名字`} hint="（中文，例：雅綸）">
             <input
               className={inputCls}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="例：陳小美"
+              placeholder={kind === "teacher" ? "例：雅綸" : "例：陳小美"}
+              autoFocus
             />
           </Field>
-          <Field label="登入帳號" hint="（英文/數字，登入用）">
+          <Field label="登入帳號" hint="（自動用拼音產生，可修改）">
             <input
-              className={inputCls}
+              className={`${inputCls} font-mono`}
               value={handle}
-              onChange={(e) => setHandle(e.target.value)}
-              placeholder="例：amei"
+              onChange={(e) => {
+                setHandleEdited(true);
+                setHandle(e.target.value);
+              }}
+              placeholder="打名字後自動產生"
               autoCapitalize="none"
               autoCorrect="off"
             />
           </Field>
-          <Field label="密碼" hint="（至少 6 碼）">
-            <input
-              className={inputCls}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="給工讀生的初始密碼"
-            />
+          <Field label="密碼" hint="（自動產生：帳號＋4 位數字）">
+            <div className="flex gap-2">
+              <input
+                className={`${inputCls} font-mono`}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <GhostBtn
+                onClick={() => handle.trim() && setPassword(newPassword(handle.trim().toLowerCase()))}
+                disabled={!handle.trim()}
+              >
+                🔄 換一組
+              </GhostBtn>
+            </div>
           </Field>
           {err && <p className="text-sm text-brand">{err}</p>}
           <div className="flex justify-end gap-2 pt-1">
             <GhostBtn onClick={onClose}>取消</GhostBtn>
-            <PrimaryBtn onClick={save} disabled={busy}>
+            <PrimaryBtn onClick={create} disabled={busy || !name.trim() || !handle.trim()}>
               {busy ? "建立中…" : "建立帳號"}
             </PrimaryBtn>
           </div>

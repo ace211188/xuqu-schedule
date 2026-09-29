@@ -12,7 +12,7 @@ import {
   REFERRAL_HINT,
   SOURCES,
   STATUS_TONE,
-  TEACHERS,
+  useTeacherNames,
   advanceStatus,
   createFeeRecord,
   createStudent,
@@ -628,6 +628,7 @@ function EditBody({
   onGroupCost: (v: string) => void;
 }) {
   const numField = (v: number | null) => (v == null ? "" : String(v));
+  const teacherNames = useTeacherNames();
   return (
     <div className="space-y-4">
       {/* 三、招生與課程（順序：課程種類→期別→科目→老師） */}
@@ -660,7 +661,7 @@ function EditBody({
       </Field>
       <Field label="上課老師" hint="(可多位，對應科目順序)">
         <div className="mb-1.5 flex flex-wrap gap-1.5">
-          {TEACHERS.map((t) => (
+          {teacherNames.map((t) => (
             <button
               key={t}
               type="button"

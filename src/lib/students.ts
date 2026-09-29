@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
 
 // ── 狀態 ─────────────────────────────────────────────
@@ -108,8 +109,34 @@ export const REFERRAL_HINT = "口碑介紹：舊生 −1000、新生 −500（�
 // 收款人快速選項（可自由手填其他）
 export const COLLECTORS = ["宇群", "美君", "奕寬"] as const;
 
-// 上課老師快速選項
+// 上課老師快速選項（固定清單＝排序依據與讀不到資料時的備援）
 export const TEACHERS = ["宇群", "美君", "奕寬", "蓁芸", "孟凱", "恩妤", "雅綸"] as const;
+
+// 上課老師快速選項：從老師帳號自動抓（在設定頁新增的老師會自動出現），
+// 排除工讀生與教室端「管理員」帳號；原本清單裡的老師維持原順序，新老師排後面
+export function useTeacherNames(): string[] {
+  const [names, setNames] = useState<string[]>([...TEACHERS]);
+  useEffect(() => {
+    let active = true;
+    supabase
+      .from("teachers")
+      .select("name,created_at")
+      .eq("is_worker", false)
+      .neq("name", "管理員")
+      .order("created_at")
+      .then(({ data }) => {
+        if (!active || !data?.length) return;
+        const order = TEACHERS as readonly string[];
+        const rank = (n: string) => (order.includes(n) ? order.indexOf(n) : order.length);
+        const list = (data as { name: string }[]).map((t) => t.name);
+        setNames([...list].sort((a, b) => rank(a) - rank(b)));
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  return names;
+}
 
 // 主要聯絡人快速選項
 export const CONTACTS = ["媽", "爸", "爸+媽", "本人"] as const;

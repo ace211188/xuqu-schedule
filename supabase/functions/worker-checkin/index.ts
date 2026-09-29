@@ -349,11 +349,21 @@ Deno.serve(async (req) => {
     return json({ ok: true, workers: data ?? [] });
   }
 
-  if (mode === "create_worker") {
-    if (!me.is_admin) return json({ error: "只有管理員能建立工讀生帳號" }, 403);
+  // 管理員建立帳號（老師或工讀生）：auth 使用者 + teachers 列 + 帳密一覽（teacher_credentials）
+  if (mode === "create_worker" || mode === "create_teacher") {
+    const isWorker = mode === "create_worker";
+    if (!me.is_admin)
+      return json({ error: `只有管理員能建立${isWorker ? "工讀生" : "老師"}帳號` }, 403);
     const v = validateWorkerInput(body.handle, body.name, body.password);
     if ("error" in v) return json({ error: v.error }, 400);
     const { handle, name, password } = v;
+
+    const { data: dup } = await admin
+      .from("teachers")
+      .select("id")
+      .eq("name", name)
+      .maybeSingle();
+    if (dup) return json({ error: `已經有叫「${name}」的帳號了` }, 400);
 
     const email = `${handle}@xuqu.tw`;
     const { data: created, error: createErr } =
@@ -361,22 +371,33 @@ Deno.serve(async (req) => {
         email,
         password,
         email_confirm: true,
+        user_metadata: { name },
       });
-    if (createErr || !created?.user)
+    if (createErr || !created?.user) {
+      const taken = /already|registered|exists/i.test(createErr?.message ?? "");
       return json(
-        { error: createErr?.message ?? "建立帳號失敗（帳號可能已存在）" },
+        { error: taken ? `帳號「${handle}」已經有人用了，請換一個` : createErr?.message ?? "建立帳號失敗" },
         400
       );
+    }
 
     const { error: insErr } = await admin.from("teachers").insert({
       id: created.user.id,
       name,
-      is_worker: true,
+      is_worker: isWorker,
     });
     if (insErr) {
       // 回滾剛建立的 auth 使用者，避免留下沒有 teachers 列的孤兒帳號
       await admin.auth.admin.deleteUser(created.user.id);
       return json({ error: `建立失敗：${insErr.message}` }, 400);
+    }
+    // 帳密一覽（排課後台「🔑 老師帳號密碼一覽」，忘記時查）
+    const { error: credErr } = await admin
+      .from("teacher_credentials")
+      .insert({ teacher_id: created.user.id, username: handle, password });
+    if (credErr) {
+      await admin.auth.admin.deleteUser(created.user.id);
+      return json({ error: `建立失敗：${credErr.message}` }, 400);
     }
     return json({ ok: true, handle, email, name });
   }
