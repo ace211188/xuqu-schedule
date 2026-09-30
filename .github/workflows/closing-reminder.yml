@@ -1,14 +1,14 @@
 name: 打烊未填提醒
 
 on:
+  # 排程已改用 Supabase pg_cron（每天台北 21:30 準時呼叫 closing-reminder Edge Function），
+  # 因為 GitHub Actions 的 schedule 會延遲數小時、把提醒拖到半夜。
+  # 這裡只保留手動觸發當備援；不要再加回 schedule，否則會重複發送。
   workflow_dispatch:
     inputs:
       mode:
         description: "run(檢查後推播) / test(只推測試給宇群)"
         default: "test"
-  schedule:
-    # 每天 21:30 台北（UTC 13:30）；GitHub 排程可能晚幾分鐘
-    - cron: "30 13 * * *"
 
 jobs:
   send:
