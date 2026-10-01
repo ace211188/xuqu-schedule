@@ -22,13 +22,12 @@ const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-// 收集的目標月份＝下個月
-function nextMonth() {
-  const d = new Date();
-  const n = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
+// 收集的目標月份＝這個月（與 App 預設「這個月」一致；用台灣時間避免跨日誤判）
+function thisMonth() {
+  const d = new Date(Date.now() + 8 * 3600_000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
-const month = nextMonth();
+const month = thisMonth();
 const [y, m] = month.split("-");
 const label = `${y} 年 ${Number(m)} 月`;
 
