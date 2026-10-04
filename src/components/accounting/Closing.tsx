@@ -173,6 +173,7 @@ export default function Closing({ teacher }: { teacher: Teacher }) {
     setErr(null);
     setBusy(true);
     const { error } = await saveClosing({
+      existingId: rec?.id ?? null,
       closeDate: editDate,
       closedBy: teacher.id,
       roomsChecked: rooms.filter((r) => checked.has(r.name)).map((r) => r.name),

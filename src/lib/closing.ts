@@ -265,8 +265,12 @@ export async function fetchPettySummary(
   };
 }
 
-// ── 寫入：今天的打烊紀錄（一天一筆，close_date 為衝突鍵）──
+// ── 寫入：打烊紀錄（一天一筆）──
+// 已有紀錄 → 直接 update 那一筆；沒有 → insert。
+// 不能用 upsert：資料庫對 upsert 也會檢查「新增」權限（只限當天負責人），
+// 導致存完後被改指派的編輯者，明明還在 16 小時內卻存不了。
 export async function saveClosing(p: {
+  existingId?: string | null; // 已存在的紀錄 id（修改時帶）
   closeDate?: string; // 預設今天；修改昨天的紀錄時帶那天
   closedBy: string;
   roomsChecked: string[];
@@ -278,22 +282,35 @@ export async function saveClosing(p: {
   todayChange: number;
   note: string | null;
 }): Promise<Res> {
-  const { error } = await supabase.from("closing_records").upsert(
-    {
-      close_date: p.closeDate ?? todayISO(),
-      closed_by: p.closedBy,
-      rooms_checked: p.roomsChecked,
-      rooms_total: p.roomsTotal,
-      tasks_checked: p.tasksChecked,
-      tasks_total: p.tasksTotal,
-      petty_expected: p.pettyExpected,
-      petty_actual: p.pettyActual,
-      today_change: p.todayChange,
-      note: p.note,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "close_date" }
-  );
+  const fields = {
+    rooms_checked: p.roomsChecked,
+    rooms_total: p.roomsTotal,
+    tasks_checked: p.tasksChecked,
+    tasks_total: p.tasksTotal,
+    petty_expected: p.pettyExpected,
+    petty_actual: p.pettyActual,
+    today_change: p.todayChange,
+    note: p.note,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (p.existingId) {
+    const { data, error } = await supabase
+      .from("closing_records")
+      .update(fields)
+      .eq("id", p.existingId)
+      .select("id");
+    if (error) return { error: error.message };
+    // 權限不符時 update 不會報錯、只是改到 0 筆 → 當成被擋
+    if (!data?.length) return { error: "row-level security: 0 rows updated" };
+    return { error: null };
+  }
+
+  const { error } = await supabase.from("closing_records").insert({
+    ...fields,
+    close_date: p.closeDate ?? todayISO(),
+    closed_by: p.closedBy,
+  });
   return { error: error?.message ?? null };
 }
 
