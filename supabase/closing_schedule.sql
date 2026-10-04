@@ -123,15 +123,11 @@ create policy "closing insert" on public.closing_records
     and public.closing_can_fill(close_date)
   );
 
--- 修改：編輯者本人＋8 小時內＋仍是當天負責人（存完後被改指派給別人就不能再改）
+-- 修改：存的人本人＋第一次存檔後 16 小時內（2026-10-04 起；之後改指派不影響已存的紀錄）
 drop policy if exists "closing update" on public.closing_records;
 create policy "closing update" on public.closing_records
   for update
-  using (
-    closed_by = auth.uid()
-    and now() < created_at + interval '8 hours'
-    and public.closing_can_fill(close_date)
-  )
+  using (closed_by = auth.uid() and now() < created_at + interval '16 hours')
   with check (closed_by = auth.uid());
 
 -- 宇群：標記／取消公休

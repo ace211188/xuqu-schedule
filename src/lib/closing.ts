@@ -46,8 +46,8 @@ export type PettySummary = {
 
 type Res = { error: string | null };
 
-// ── 編輯權限：當天第一個存檔的人＝編輯者；自第一次存檔起 8 小時內可改（資料庫同樣把關）──
-export const EDIT_WINDOW_HOURS = 8;
+// ── 編輯權限：當天第一個存檔的人＝編輯者；自第一次存檔起 16 小時內可改（資料庫同樣把關；之後改指派不影響已存的紀錄）──
+export const EDIT_WINDOW_HOURS = 16;
 
 export function editDeadline(r: ClosingRecord): Date {
   return new Date(new Date(r.created_at).getTime() + EDIT_WINDOW_HOURS * 3600_000);
@@ -267,6 +267,7 @@ export async function fetchPettySummary(
 
 // ── 寫入：今天的打烊紀錄（一天一筆，close_date 為衝突鍵）──
 export async function saveClosing(p: {
+  closeDate?: string; // 預設今天；修改昨天的紀錄時帶那天
   closedBy: string;
   roomsChecked: string[];
   roomsTotal: number;
@@ -279,7 +280,7 @@ export async function saveClosing(p: {
 }): Promise<Res> {
   const { error } = await supabase.from("closing_records").upsert(
     {
-      close_date: todayISO(),
+      close_date: p.closeDate ?? todayISO(),
       closed_by: p.closedBy,
       rooms_checked: p.roomsChecked,
       rooms_total: p.roomsTotal,

@@ -53,37 +53,67 @@ export default function Closing({ teacher }: { teacher: Teacher }) {
   const [savedFlash, setSavedFlash] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
-  // 每分鐘更新一次「現在」，讓 8 小時鎖定在畫面開著時也會準時生效
+  // 每分鐘更新一次「現在」，讓 16 小時鎖定在畫面開著時也會準時生效
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(t);
   }, []);
 
+  // 正在填／看的是哪一天：預設今天；過了午夜還能改昨天的紀錄（16 小時內）
+  const [editDate, setEditDate] = useState(() => todayISO());
+  const editingPast = editDate !== todayISO();
+
   const today = useMemo(
     () => list.find((r) => r.close_date === todayISO()) ?? null,
     [list]
   );
-  const edit = closingEditState(today, teacher.id, now);
+  // 目前畫面上的那一筆紀錄（今天或昨天）
+  const rec = useMemo(
+    () => list.find((r) => r.close_date === editDate) ?? null,
+    [list, editDate]
+  );
+  const edit = closingEditState(rec, teacher.id, now);
+  // 昨天那筆若還能改（自己存的、16 小時內），提供入口
+  const yDate = addDaysISO(todayISO(), -1);
+  const yRec = list.find((r) => r.close_date === yDate) ?? null;
+  const yEdit = closingEditState(yRec, teacher.id, now);
   // 今天的排班（負責人／公休）
   const todayDuty = useMemo(
     () => schedule.find((s) => s.day === todayISO()) ?? null,
     [schedule]
   );
-  // 公休或不是今天的負責人 → 不能填也不能改（有指派代班時，原本輪值的人也不能）；資料庫同樣把關
-  const dutyBlock: "holiday" | "notDuty" | null = todayDuty?.holiday
-    ? "holiday"
-    : !canFillDay(todayDuty, teacher.id)
-    ? "notDuty"
-    : null;
+  // 還沒有紀錄時才看負責人：公休或不是當天負責人 → 不能新填（有指派代班時，原本輪值的人也不能）。
+  // 已經存好的紀錄只看「是不是你存的＋16 小時內」，之後改指派不影響。資料庫同樣把關。
+  const dutyBlock: "holiday" | "notDuty" | null =
+    rec || editingPast
+      ? null
+      : todayDuty?.holiday
+      ? "holiday"
+      : !canFillDay(todayDuty, teacher.id)
+      ? "notDuty"
+      : null;
   const readOnly = !edit.canEdit || dutyBlock !== null;
+
+  function fillForm(r: ClosingRecord | null) {
+    setChecked(new Set(r?.rooms_checked ?? []));
+    setTasksChecked(new Set(r?.tasks_checked ?? []));
+    setPettyActual(r?.petty_actual != null ? String(r.petty_actual) : "");
+    setNote(r?.note ?? "");
+  }
+
+  function switchTo(date: string) {
+    setErr(null);
+    setEditDate(date);
+    fillForm(list.find((r) => r.close_date === date) ?? null);
+  }
 
   async function loadSchedule() {
     const start = todayISO();
     setSchedule(await fetchSchedule(start, addDaysISO(start, 13)));
   }
 
-  async function load() {
+  async function load(date = editDate) {
     const start = todayISO();
     const [r, tk, ro, l, p, sc, wo] = await Promise.all([
       fetchRooms(),
@@ -101,13 +131,8 @@ export default function Closing({ teacher }: { teacher: Teacher }) {
     setPetty(p);
     setSchedule(sc);
     setWorkerOptions(wo);
-    const t = l.find((x) => x.close_date === todayISO());
-    if (t) {
-      setChecked(new Set(t.rooms_checked));
-      setTasksChecked(new Set(t.tasks_checked));
-      setPettyActual(t.petty_actual != null ? String(t.petty_actual) : "");
-      setNote(t.note ?? "");
-    }
+    const t = l.find((x) => x.close_date === date);
+    if (t) fillForm(t);
     setLoading(false);
   }
   useEffect(() => {
@@ -117,14 +142,15 @@ export default function Closing({ teacher }: { teacher: Teacher }) {
 
   const duty = useMemo(() => weekDuty(roster), [roster]);
 
-  // 可編輯時看即時數字；唯讀時看當時存下的快照（那才是當時盤點的依據）
-  const pettyExpected = readOnly
-    ? today?.petty_expected ?? null
+  // 今天可編輯時看即時數字；唯讀或改昨天時看當時存下的快照（那才是當時盤點的依據）
+  const useSnapshot = readOnly || editingPast;
+  const pettyExpected = useSnapshot
+    ? rec?.petty_expected ?? null
     : petty?.petty_expected ?? null;
-  const todayChange = readOnly
-    ? today?.today_change ?? 0
+  const todayChange = useSnapshot
+    ? rec?.today_change ?? 0
     : petty?.today_change ?? 0;
-  const hasPetty = readOnly ? today?.petty_expected != null : !!petty?.has_petty;
+  const hasPetty = useSnapshot ? rec?.petty_expected != null : !!petty?.has_petty;
 
   function toggleIn(setter: typeof setChecked) {
     return (name: string) => {
@@ -147,22 +173,24 @@ export default function Closing({ teacher }: { teacher: Teacher }) {
     setErr(null);
     setBusy(true);
     const { error } = await saveClosing({
+      closeDate: editDate,
       closedBy: teacher.id,
       roomsChecked: rooms.filter((r) => checked.has(r.name)).map((r) => r.name),
       roomsTotal: rooms.length,
       tasksChecked: tasks.filter((t) => tasksChecked.has(t.name)).map((t) => t.name),
       tasksTotal: tasks.length,
-      pettyExpected: petty?.petty_expected ?? null,
+      // 改昨天的紀錄：零用金數字保留當時的快照，不用今天的即時數字覆蓋
+      pettyExpected: editingPast ? rec?.petty_expected ?? null : petty?.petty_expected ?? null,
       pettyActual: actualNum,
-      todayChange: petty?.today_change ?? 0,
+      todayChange: editingPast ? rec?.today_change ?? 0 : petty?.today_change ?? 0,
       note: note.trim() || null,
     });
     setBusy(false);
     if (error) {
-      // 最常見：別人剛好先存了、或已超過 8 小時 → 重新載入後會變成唯讀
+      // 最常見：別人剛好先存了、或已超過 16 小時 → 重新載入後會變成唯讀
       setErr(
         /row-level security|violates/i.test(error)
-          ? "無法儲存：今天不是你負責打烊、已由其他人填寫，或已超過可修改時間。"
+          ? "無法儲存：不是你負責打烊、已由其他人填寫，或已超過可修改時間。"
           : error
       );
       await load();
@@ -178,30 +206,65 @@ export default function Closing({ teacher }: { teacher: Teacher }) {
 
   return (
     <div className="space-y-4">
+      {/* 過了午夜：昨天自己存的紀錄還能改時，提供入口 */}
+      {!editingPast && yRec && yEdit.canEdit && (
+        <button
+          onClick={() => switchTo(yDate)}
+          className="flex w-full items-center justify-between gap-2 rounded-xl border border-navy/20 bg-navy/5 px-3 py-2.5 text-left text-sm text-navy transition hover:bg-navy/10"
+        >
+          <span>
+            ✏️ 昨天（{shortDay(yDate)}）的打烊紀錄還可以修改到 {fmtDeadline(yEdit.deadline)}
+          </span>
+          <span className="shrink-0 font-medium">修改昨天的紀錄 →</span>
+        </button>
+      )}
+      {editingPast && (
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-300/60 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+          <span>正在修改 {shortDay(editDate)} 的打烊紀錄</span>
+          <button
+            onClick={() => switchTo(todayISO())}
+            className="shrink-0 rounded-full border border-amber-400/60 px-3 py-1 text-xs font-medium hover:bg-amber-100"
+          >
+            ← 回到今天
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <p className="text-sm text-black/55">
-            今天打烊負責人：
-            <b className="text-navy">{todayDuty ? dutyLabel(todayDuty) : "—"}</b>
-            {today && (
-              <span className="ml-2 text-xs text-black/45">
-                （由 {today.closer_name ?? "—"} 填寫）
-              </span>
-            )}
-          </p>
+          {editingPast ? (
+            <p className="text-sm text-black/55">
+              {shortDay(editDate)} 的打烊紀錄
+              {rec && (
+                <span className="ml-2 text-xs text-black/45">
+                  （由 {rec.closer_name ?? "—"} 填寫）
+                </span>
+              )}
+            </p>
+          ) : (
+            <p className="text-sm text-black/55">
+              今天打烊負責人：
+              <b className="text-navy">{todayDuty ? dutyLabel(todayDuty) : "—"}</b>
+              {today && (
+                <span className="ml-2 text-xs text-black/45">
+                  （由 {today.closer_name ?? "—"} 填寫）
+                </span>
+              )}
+            </p>
+          )}
           <p className="text-xs text-black/40">
-            {todayISO()}
-            {todayDuty ? `（週${WEEKDAY_LABEL[todayDuty.weekday]}）` : ""}
+            {editDate}
+            {!editingPast && todayDuty ? `（週${WEEKDAY_LABEL[todayDuty.weekday]}）` : ""}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {today && (
+          {rec && (
             <span className="rounded-full bg-[#8CA07C]/15 px-3 py-1 text-xs font-medium text-[#5f7a4f]">
-              今日已記錄
+              {editingPast ? "已記錄" : "今日已記錄"}
             </span>
           )}
           {/* 宇群：一鍵標今天公休（今天還沒人填、也不是固定公休時） */}
-          {teacher.is_admin && !today && todayDuty && !todayDuty.fixed_holiday && (
+          {!editingPast && teacher.is_admin && !today && todayDuty && !todayDuty.fixed_holiday && (
             <button
               onClick={async () => {
                 const next = !todayDuty.holiday;
@@ -222,7 +285,7 @@ export default function Closing({ teacher }: { teacher: Teacher }) {
       <EditBanner
         edit={edit}
         dutyBlock={dutyBlock}
-        closerName={today?.closer_name ?? null}
+        closerName={rec?.closer_name ?? null}
         dutyName={todayDuty ? dutyLabel(todayDuty) : null}
       />
 
@@ -334,7 +397,7 @@ export default function Closing({ teacher }: { teacher: Teacher }) {
             <span className="text-sm text-[#5f7a4f]">✓ 已儲存打烊紀錄</span>
           )}
           <PrimaryBtn onClick={save} disabled={busy}>
-            {busy ? "儲存中…" : today ? "更新打烊紀錄" : "儲存打烊紀錄"}
+            {busy ? "儲存中…" : rec ? "更新打烊紀錄" : "儲存打烊紀錄"}
           </PrimaryBtn>
         </div>
       )}
@@ -579,6 +642,22 @@ function ScheduleList({
   );
 }
 
+// 「10/3（週六）」
+function shortDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${m}/${d}（週${WEEKDAY_LABEL[new Date(y, m - 1, d).getDay()]}）`;
+}
+
+// 可修改期限：今天內只顯示時間，跨日顯示「明天 13:50」或日期
+function fmtDeadline(d: Date | null): string {
+  if (!d) return "—";
+  const t = fmtTime(d.toISOString());
+  const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  if (day === todayISO()) return t;
+  if (day === addDaysISO(todayISO(), 1)) return `明天 ${t}`;
+  return `${d.getMonth() + 1}/${d.getDate()} ${t}`;
+}
+
 function EditBanner({
   edit,
   dutyBlock,
@@ -606,7 +685,7 @@ function EditBanner({
     return (
       <p className="rounded-xl bg-navy/5 px-3 py-2 text-xs text-navy/80">
         {edit.deadline
-          ? `✏️ 你是今天的編輯者，可以修改到 ${fmtTime(edit.deadline.toISOString())}（存檔後 ${EDIT_WINDOW_HOURS} 小時內）。`
+          ? `✏️ 你是這筆紀錄的編輯者，可以修改到 ${fmtDeadline(edit.deadline)}（存檔後 ${EDIT_WINDOW_HOURS} 小時內）。`
           : `今天還沒有人填寫。存檔後你就是今天的編輯者，${EDIT_WINDOW_HOURS} 小時內可以修改，其他人只能檢視。`}
       </p>
     );
@@ -616,7 +695,7 @@ function EditBanner({
       🔒{" "}
       {edit.reason === "others"
         ? `今天由 ${closerName ?? "其他人"} 填寫，你只能檢視。`
-        : `已超過 ${EDIT_WINDOW_HOURS} 小時，今天的紀錄已鎖定，僅供檢視。`}
+        : `已超過 ${EDIT_WINDOW_HOURS} 小時，這筆紀錄已鎖定，僅供檢視。`}
     </p>
   );
 }
